@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskiq-scheduler
+spec:
+  replicas: 1  # ⚠️ Only 1 instance! Do not scale this.
+  selector:
+    matchLabels:
+      app: taskiq-scheduler
+  template:
+    metadata:
+      labels:
+        app: taskiq-scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: myapp:latest
+          command: [ "python", "-m", "app.scheduler" ]

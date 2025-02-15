@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskiq-worker
+spec:
+  replicas: 3  # Scale workers based on the load
+  selector:
+    matchLabels:
+      app: taskiq-worker
+  template:
+    metadata:
+      labels:
+        app: taskiq-worker
+    spec:
+      containers:
+        - name: worker
+          image: myapp:latest
+          command: [ "taskiq", "worker", "app.settings.my_taskiq:broker" ]

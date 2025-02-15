@@ -1,0 +1,67 @@
+[project]
+name = "kronk"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiofiles",
+    "aiohttp",
+    "asyncpg",
+    "bcrypt",
+    "fastapi-jwt[authlib]",
+    "fastapi[standard]",
+    "firebase-admin",
+    "miniopy-async",
+    "modern-colorthief",
+    "opencv-python",
+    "pillow",
+    "pydantic-async-validation",
+    "pydantic-settings",
+    "python-dateutil",
+    "python-json-logger",
+    "python-multipart",
+    "redis",
+    "taskiq-redis",
+    "taskiq[reload]",
+    "tortoise-orm",
+    "uvicorn",
+    "websockets",
+]
+
+[dependency-groups]
+dev = ["black>=24.10.0", "ipython>=8.29.0", "isort>=5.13.2"]
+
+[tool.pyright]
+include = ["."]
+venvPath = "./"
+venv = ".venv"
+extraPaths = [".venv", ".env", "venv", "env"]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 280
+
+[tool.ruff.format]
+quote-style = "double"
+
+
+[tool.mypy]
+mypy_path = [".venv", ".env", "venv", "env"]
+files = ["./"]
+strict = true
+ignore_missing_imports = true
+
+[tool.black]
+line-length = 280
+target-version = ["py312"]
+
+[tool.aerich]
+tortoise_orm = "app.main.TORTOISE_ORM"
+location = "./migrations"
+src_folder = "./."
+
+[tool.uv.sources]
+tortoise-orm = { git = "https://github.com/tortoise/tortoise-orm" }
