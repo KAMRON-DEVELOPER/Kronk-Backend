@@ -2,13 +2,12 @@ import math
 import time
 from datetime import datetime, timedelta
 from typing import Optional
-from uuid import uuid4, UUID
-
-from redis.asyncio import Redis
+from uuid import UUID, uuid4
 
 from app.community_app.models import PostModel, ReactionEnum
 from app.settings.my_config import get_settings
 from app.users_app.models import UserModel
+from redis.asyncio import Redis
 
 my_redis = Redis.from_url(url=get_settings().REDIS_URL, decode_responses=True, auto_close_connection_pool=True)
 
@@ -195,13 +194,7 @@ class CacheManager:
 
             async with self.redis.pipeline() as pipe:
                 print(f"🚧 mapping: {user_mapping}")
-                await (
-                    pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping)
-                    .sadd("user_profiles", new_user.id.hex)
-                    .hset(name="usernames", mapping={new_user.username: new_user.id.hex})
-                    .hset(name="emails", mapping={new_user.email: "1"})
-                    .execute()
-                )
+                await pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping).sadd("user_profiles", new_user.id.hex).hset(name="usernames", mapping={new_user.username: new_user.id.hex}).hset(name="emails", mapping={new_user.email: "1"}).execute()
         except Exception as e:
             raise ValueError(f"🥶 Exception in create_user_profile: {e}")
 
@@ -212,6 +205,8 @@ class CacheManager:
 
     async def get_user_profile_by_username(self, username: str) -> dict:
         user_id: Optional[str] = await self.redis.hget(name="usernames", key=username)
+        if user_id is None:
+            return {}
         return await self.get_user_profile(user_id=user_id)
 
     async def delete_user_profile(self, user_id: str):

@@ -12,6 +12,7 @@ dependencies = [
     "fastapi-jwt[authlib]",
     "fastapi[standard]",
     "firebase-admin",
+    "loguru>=0.7.3",
     "miniopy-async",
     "modern-colorthief",
     "opencv-python",

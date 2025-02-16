@@ -6,10 +6,9 @@ from typing import Optional
 from uuid import UUID
 
 import aiohttp
+from app.settings.my_minio import put_object_to_minio
 from modern_colorthief import get_color
 from PIL import Image
-
-from app.settings.my_minio import put_object_to_minio
 
 
 async def get_dominant_color(image_url: str) -> Optional[str]:
@@ -63,7 +62,8 @@ async def prepare_image_data(image_data: bytes) -> BytesIO:
     try:
         # Open the image using BytesIO
         print(f"🔨 2 Uploading image of size {len(image_data)} bytes to MinIO.")
-        pil_image = Image.open(image_data)
+        image_stream = BytesIO(image_data)
+        pil_image = Image.open(image_stream)
 
         # Verify and convert to RGB in a single step
         pil_image.load()  # Ensure the image is loaded
@@ -78,6 +78,7 @@ async def prepare_image_data(image_data: bytes) -> BytesIO:
         return output_image
     except Exception as e:
         print(f"🌋 Exception in prepare_image_data: {e}")
+        raise ValueError(f"🌋 Exception in prepare_image_data: {e}")
 
 
 def generate_unique_username(base_name: str) -> str:
@@ -107,4 +108,4 @@ async def generate_avatar_url(user_id: UUID, image_url: str) -> Optional[str]:
         return None
     except Exception as e:
         print(f"🌋 Exception in generate_avatar_url: {e}")
-        return None
+        raise ValueError(f"🌋 Exception in generate_avatar_url: {e}")

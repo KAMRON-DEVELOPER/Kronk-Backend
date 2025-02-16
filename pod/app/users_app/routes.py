@@ -15,6 +15,7 @@ from app.users_app.models import UserModel
 from app.users_app.schemas import LoginSchema, RegisterSchema, RequestResetPasswordSchema, ResetPasswordSchema, UpdateSchema, VerifySchema
 from app.utility.utility import generate_avatar_url, generate_password_string, generate_unique_username
 from app.utility.validators import allowed_image_extension, get_file_extension, validate_password
+from app.utility.my_logger import my_logger
 
 users_router = APIRouter()
 
@@ -63,7 +64,7 @@ async def register(register_schema: RegisterSchema, header_token_dependency: hea
 
     except ValueError as e:
         print(f"ValueError in register_user: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e} ")
     except Exception as e:
         print(f"Exception in register_user: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
@@ -107,25 +108,25 @@ async def login_user(login_schema: LoginSchema):
     try:
         await login_schema.model_async_validate()
 
-        db_user: Optional[UserModel] = await UserModel.get_or_none(username=login_schema.username)
-        if not db_user:
-            raise ValueError("User not found.")
-
-        if not checkpw(login_schema.password.encode(), db_user.password.encode()):
-            raise ValueError("password is not match.")
-
-        await cache_manager.create_user_profile(new_user=db_user)
-
-        return generate_token_response(db_user=db_user)
-
-        # user_data: dict = await cache_manager.get_user_profile_by_username(username=login_schema.username)
-        # if not user_data:
+        # db_user: Optional[UserModel] = await UserModel.get_or_none(username=login_schema.username)
+        # if not db_user:
         #     raise ValueError("User not found.")
         #
-        # if not checkpw(login_schema.password.encode(), user_data.get("password")):
+        # if not checkpw(login_schema.password.encode(), db_user.password.encode()):
         #     raise ValueError("password is not match.")
+        #
+        # await cache_manager.create_user_profile(new_user=db_user)
+        #
+        # return generate_token_response(db_user=db_user)
 
-        # return user_data
+        user_data: dict = await cache_manager.get_user_profile_by_username(username=login_schema.username)
+        if not user_data:
+            raise ValueError("User not found.")
+
+        if not checkpw(login_schema.password.encode(), user_data.get("password")):
+            raise ValueError("password is not match.")
+
+        return user_data
     except ValueError as e:
         print(f"ValueError in login_user: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -215,8 +216,8 @@ async def refresh(jwt_refresh_dependency: jwtRefreshDependency):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while refreshing the token.")
 
 
-@users_router.post(path="/social-auth", status_code=status.HTTP_201_CREATED)
-async def social_auth(header_token_dependency: headerTokenDependency):
+@users_router.post(path="/google-auth", status_code=status.HTTP_201_CREATED)
+async def google_auth(header_token_dependency: headerTokenDependency):
     try:
         if not header_token_dependency.firebase_id_token:
             raise ValueError("Firebase ID token is missing in the headers.")
@@ -241,6 +242,8 @@ async def social_auth(header_token_dependency: headerTokenDependency):
                 await new_user.save()
 
         await cache_manager.create_user_profile(new_user=new_user)
+
+        await send_email_task.kiq(to_email=new_user.email, username=new_user.username, for_thanks_signing_up=True)
 
         return generate_token_response(db_user=new_user)
     except ValueError as e:
@@ -359,6 +362,7 @@ async def delete_user(jwt_access_dependency: jwtAccessDependency):
 @users_router.get(path="/all", status_code=status.HTTP_200_OK)
 async def get_users():
     try:
+        my_logger.critical("request come to get_users route.")
         users_model = await UserModel.all()
         print(f"users_model: {users_model}")
 
@@ -370,6 +374,25 @@ async def get_users():
     except Exception as e:
         print(f"Exception in get_users: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while getting the users.")
+
+@users_router.delete(path="/profile", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user_by_id(user_id: str):
+    try:
+        # delete from redis
+        await cache_manager.delete_user_profile(user_id=user_id)
+
+        # delete all media files
+        await wipe_objects_from_minio(user_id=user_id)
+
+        # delete from database
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=user_id)
+        if db_user:
+            await db_user.delete()
+
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        print(f"Exception in delete_user: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while deleting the user.")
 
 
 @users_router.get(path="/delete_all_users", status_code=status.HTTP_204_NO_CONTENT)

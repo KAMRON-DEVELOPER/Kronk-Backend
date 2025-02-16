@@ -52,6 +52,7 @@ async def wipe_objects_from_minio(user_id: str) -> None:
             await remove_object_from_minio(object_name=object_name)
     except Exception as e:
         print(f"Exception in wipe_objects_from_minio: {e}")
+        raise ValueError(f"Exception in wipe_objects_from_minio: {e}")
 
 
 async def minio_ready() -> bool:

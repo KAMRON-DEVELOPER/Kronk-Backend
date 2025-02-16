@@ -59,7 +59,7 @@ services:
     ports:
       - "5540:5540"
     volumes:
-      - redisinsight_volume:/data
+      - redisinsight_storage:/data
 
 volumes:
   postgres_storage:
@@ -68,4 +68,5 @@ volumes:
     name: redis_storage_volume
   minio_storage:
     name: minio_storage_volume
-  redisinsight_volume:
+  redisinsight_storage:
+    name: redisinsight_storage_volume

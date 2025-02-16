@@ -1,14 +1,14 @@
 import asyncio
+from typing import Optional
 
 import aiohttp
+from app.community_app.models import PostModel
+from app.settings.my_config import get_settings
+from app.settings.my_redis import my_redis
 from taskiq import TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 from tortoise.expressions import F
-
-from app.community_app.models import PostModel
-from app.settings.my_config import get_settings
-from app.settings.my_redis import my_redis
 
 broker = ListQueueBroker(
     url="redis://default:kamronbek2003@localhost:6379/1",
@@ -19,9 +19,9 @@ scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker=b
 
 
 @broker.task
-async def send_email_task(to_email: str, username: str, code: str, for_reset_password: bool = False):
+async def send_email_task(to_email: str, username: str, code: str = "0000", for_reset_password: bool = False, for_thanks_signing_up: bool = False):
     zepto = ZeptoMail()
-    await zepto.send_email(to_email, username, code, for_reset_password)
+    await zepto.send_email(to_email, username, code, for_reset_password, for_thanks_signing_up)
 
 
 class ZeptoMail:
@@ -29,7 +29,7 @@ class ZeptoMail:
     HEADERS = {"accept": "application/json", "content-type": "application/json", "authorization": f"Zoho-enczapikey {get_settings().EMAIL_SERVICE_API_KEY}"}
 
     @staticmethod
-    async def send_email(to_email: str, username: str, code: str, for_reset_password: bool = False):
+    async def send_email(to_email: str, username: str, code: str = "0000", for_reset_password: bool = False, for_thanks_signing_up: bool = False):
         payload = {
             "template_alias": "kronk-verification-key-alias",
             "from": {"address": "verify@kronk.uz", "name": "verify"},
@@ -38,6 +38,8 @@ class ZeptoMail:
         }
         if for_reset_password:
             payload.update({"template_alias": "kronk-password-reset-key-alias", "from": {"address": "reset@kronk.uz", "name": "reset"}})
+        if for_thanks_signing_up:
+            payload.update({"template_alias": "kronk-thanks-for-signing-up-key-alias", "from": {"address": "thanks@kronk.uz", "name": "thanks"}})
 
         async with aiohttp.ClientSession() as session:
             try:
