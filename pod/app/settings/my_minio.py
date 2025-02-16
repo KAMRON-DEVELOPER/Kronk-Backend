@@ -1,10 +1,13 @@
+from io import BytesIO
 from typing import Optional
 
 import aiohttp
-from miniopy_async import Minio
-from miniopy_async.helpers import ObjectWriteResult
-
 from app.settings.my_config import get_settings
+from app.utility.my_logger import my_logger
+from miniopy_async import Minio
+
+# from miniopy_async.datatypes import ListObjects, Object
+from miniopy_async.helpers import ObjectWriteResult
 
 settings = get_settings()
 
@@ -20,22 +23,17 @@ async def get_object_from_minio(object_name: str) -> bytes:
         raise ValueError("Exception in get_data_from_minio: {e}")
 
 
-async def put_object_to_minio(object_name: str, data: bytes, old_object_name: Optional[str] = None, for_update=False) -> str:
+async def put_object_to_minio(object_name: str, data_stream: BytesIO, length: int, old_object_name: Optional[str] = None, for_update=False) -> str:
     try:
         if for_update and old_object_name:
             await minio_client.remove_object(bucket_name=settings.MINIO_BUCKET_NAME, object_name=old_object_name)
 
-        result: ObjectWriteResult = await minio_client.put_object(
-            bucket_name=settings.MINIO_BUCKET_NAME,
-            object_name=object_name,
-            data=data,
-            length=len(data),
-        )
+        result: ObjectWriteResult = await minio_client.put_object(bucket_name=settings.MINIO_BUCKET_NAME, object_name=object_name, data=data_stream, length=length)
 
         return result.object_name
     except Exception as e:
         print(f"Exception in put_data_to_minio: {e}")
-        raise ValueError("Exception in put_data_to_minio: {e}")
+        raise ValueError(f"Exception in put_data_to_minio: {e}")
 
 
 async def remove_object_from_minio(object_name: str) -> None:
@@ -47,9 +45,9 @@ async def remove_object_from_minio(object_name: str) -> None:
 
 async def wipe_objects_from_minio(user_id: str) -> None:
     try:
-        list_objects: list = await minio_client.list_objects(bucket_name=settings.MINIO_BUCKET_NAME, prefix=f"users/{user_id}/")
-        for object_name in list_objects:
-            await remove_object_from_minio(object_name=object_name)
+        list_objects = await minio_client.list_objects(bucket_name=settings.MINIO_BUCKET_NAME, prefix=f"users/{user_id}/", recursive=True)
+        for object in list_objects:
+            await remove_object_from_minio(object_name=f"{object.object_name}")
     except Exception as e:
         print(f"Exception in wipe_objects_from_minio: {e}")
         raise ValueError(f"Exception in wipe_objects_from_minio: {e}")

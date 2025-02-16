@@ -1,4 +1,5 @@
 import math
+from app.utility.my_logger import my_logger
 import time
 from datetime import datetime, timedelta
 from typing import Optional
@@ -193,8 +194,8 @@ class CacheManager:
             # await self.redis.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping)
 
             async with self.redis.pipeline() as pipe:
-                print(f"🚧 mapping: {user_mapping}")
-                await pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping).sadd("user_profiles", new_user.id.hex).hset(name="usernames", mapping={new_user.username: new_user.id.hex}).hset(name="emails", mapping={new_user.email: "1"}).execute()
+                my_logger.info(f"🚧 mapping: {user_mapping}")
+                await pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping).sadd("profiles", new_user.id.hex).hset(name="usernames", mapping={new_user.username: new_user.id.hex}).hset(name="emails", mapping={new_user.email: "1"}).execute()
         except Exception as e:
             raise ValueError(f"🥶 Exception in create_user_profile: {e}")
 
@@ -209,7 +210,7 @@ class CacheManager:
             return {}
         return await self.get_user_profile(user_id=user_id)
 
-    async def delete_user_profile(self, user_id: str):
+    async def delete_user_profile(self, user_id: str, username: str, email: str):
         """Delete a user profile and associated data."""
 
         pipe = self.redis.pipeline()
@@ -238,6 +239,10 @@ class CacheManager:
         post_ids: list[str] = await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=0, end=-1)
         for post_id in post_ids:
             await self.delete_post(post_id, user_id)
+
+        await self.redis.srem("profiles", user_id)
+        await self.redis.hdel("usernames", username)
+        await self.redis.hdel("emails", email)
 
     ## ---------------------------------------- TRACK USER ACTIONS ----------------------------------------
 

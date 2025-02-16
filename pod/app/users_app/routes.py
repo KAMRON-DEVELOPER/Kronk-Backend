@@ -1,11 +1,6 @@
 from random import randint
 from typing import Optional
 
-from bcrypt import checkpw, gensalt, hashpw
-from fastapi import APIRouter, HTTPException, Response, status
-from firebase_admin.auth import UserRecord
-from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
-
 from app.my_taskiq.my_taskiq import send_email_task
 from app.services.firebase_service import validate_firebase_token
 from app.settings.my_dependency import access_security, headerTokenDependency, jwtAccessDependency, jwtRefreshDependency, refresh_security
@@ -13,9 +8,13 @@ from app.settings.my_minio import put_object_to_minio, remove_object_from_minio,
 from app.settings.my_redis import CacheManager, my_redis
 from app.users_app.models import UserModel
 from app.users_app.schemas import LoginSchema, RegisterSchema, RequestResetPasswordSchema, ResetPasswordSchema, UpdateSchema, VerifySchema
+from app.utility.my_logger import my_logger
 from app.utility.utility import generate_avatar_url, generate_password_string, generate_unique_username
 from app.utility.validators import allowed_image_extension, get_file_extension, validate_password
-from app.utility.my_logger import my_logger
+from bcrypt import checkpw, gensalt, hashpw
+from fastapi import APIRouter, HTTPException, Response, status
+from firebase_admin.auth import UserRecord
+from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 users_router = APIRouter()
 
@@ -108,25 +107,40 @@ async def login_user(login_schema: LoginSchema):
     try:
         await login_schema.model_async_validate()
 
-        # db_user: Optional[UserModel] = await UserModel.get_or_none(username=login_schema.username)
-        # if not db_user:
-        #     raise ValueError("User not found.")
-        #
-        # if not checkpw(login_schema.password.encode(), db_user.password.encode()):
-        #     raise ValueError("password is not match.")
-        #
-        # await cache_manager.create_user_profile(new_user=db_user)
-        #
-        # return generate_token_response(db_user=db_user)
-
         user_data: dict = await cache_manager.get_user_profile_by_username(username=login_schema.username)
-        if not user_data:
+        if user_data:
+            if not checkpw(login_schema.password.encode(), user_data.get("password")):
+                raise ValueError("password is not match.")
+
+            return user_data
+
+        db_user: Optional[UserModel] = await UserModel.get_or_none(username=login_schema.username)
+        if not db_user:
             raise ValueError("User not found.")
 
-        if not checkpw(login_schema.password.encode(), user_data.get("password")):
+        if not checkpw(login_schema.password.encode(), db_user.password.encode()):
             raise ValueError("password is not match.")
 
-        return user_data
+        await cache_manager.create_user_profile(new_user=db_user)
+
+        return generate_token_response(db_user=db_user)
+    except ValueError as e:
+        print(f"ValueError in login_user: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
+    except Exception as e:
+        print(f"Exception in login_user: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+
+
+@users_router.post(path="/logout", status_code=status.HTTP_200_OK)
+async def logout(jwt_access_dependency: jwtAccessDependency):
+    try:
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
+        if not db_user:
+            return {}
+
+        await cache_manager.delete_user_profile(user_id=jwt_access_dependency.subject["id"], username=db_user.username, email=db_user.email)
+        return {}
     except ValueError as e:
         print(f"ValueError in login_user: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -342,18 +356,17 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtAcc
 @users_router.delete(path="/profile", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(jwt_access_dependency: jwtAccessDependency):
     try:
-        # delete from redis
-        await cache_manager.delete_user_profile(user_id=jwt_access_dependency.subject["id"])
-
         # delete all media files
         await wipe_objects_from_minio(user_id=jwt_access_dependency.subject["id"])
 
         # delete from database
         db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
         if db_user:
+            # delete from redis
+            await cache_manager.delete_user_profile(user_id=jwt_access_dependency.subject["id"], username=db_user.username, email=db_user.email)
             await db_user.delete()
 
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return {}
     except Exception as e:
         print(f"Exception in delete_user: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while deleting the user.")
@@ -375,19 +388,20 @@ async def get_users():
         print(f"Exception in get_users: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while getting the users.")
 
-@users_router.delete(path="/profile", status_code=status.HTTP_204_NO_CONTENT)
+
+@users_router.delete(path="/profile-delete-by-id", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_by_id(user_id: str):
     try:
-        # delete from redis
-        await cache_manager.delete_user_profile(user_id=user_id)
+        # delete from database
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=user_id)
+
+        if db_user:
+            # delete from redis
+            await cache_manager.delete_user_profile(user_id=user_id, username=db_user.username, email=db_user.email)
+            await db_user.delete()
 
         # delete all media files
         await wipe_objects_from_minio(user_id=user_id)
-
-        # delete from database
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=user_id)
-        if db_user:
-            await db_user.delete()
 
         return Response(status_code=status.HTTP_204_NO_CONTENT)
     except Exception as e:

@@ -1,5 +1,4 @@
 import asyncio
-from typing import Optional
 
 import aiohttp
 from app.community_app.models import PostModel
@@ -50,19 +49,19 @@ class ZeptoMail:
                 return {"status": "🌋"}
 
 
-@broker.task(schedule=[{"cron": "*/4 * * * *"}])
-async def my_task() -> None:
-    """Example task."""
-    print("🗓️ my_task started heavy task!")
-    await asyncio.sleep(delay=10)
-    print("🗓️ my_task finished heavy task!")
+# @broker.task(schedule=[{"cron": "*/4 * * * *"}])
+# async def my_task() -> None:
+#     """Example task."""
+#     print("🗓️ my_task started heavy task!")
+#     await asyncio.sleep(delay=10)
+#     print("🗓️ my_task finished heavy task!")
 
 
-@broker.task(schedule=[{"cron": "*/5 * * * *"}])
+@broker.task(schedule=[{"cron": "*/30 * * * *"}])
 async def sync_post_stats() -> None:
     """Bulk update views, likes, and dislikes from Redis to DB."""
     print("🗓️ process_sync_events is started...")
-    await asyncio.sleep(delay=10)
+    await asyncio.sleep(delay=60)
     print("🗓️ process_sync_events is finished...")
 
     try:

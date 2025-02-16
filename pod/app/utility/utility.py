@@ -7,6 +7,7 @@ from uuid import UUID
 
 import aiohttp
 from app.settings.my_minio import put_object_to_minio
+from app.utility.my_logger import my_logger
 from modern_colorthief import get_color
 from PIL import Image
 
@@ -58,7 +59,7 @@ async def download_image(image_url: str) -> tuple[bytes, str]:
         print(f"🌋 Exception in download_image: {e}")
 
 
-async def prepare_image_data(image_data: bytes) -> BytesIO:
+async def prepare_image_data(image_data: bytes, max_width: int = 72, max_height: int = 72) -> BytesIO:
     try:
         # Open the image using BytesIO
         print(f"🔨 2 Uploading image of size {len(image_data)} bytes to MinIO.")
@@ -70,9 +71,12 @@ async def prepare_image_data(image_data: bytes) -> BytesIO:
         if pil_image.mode != "RGB":
             pil_image = pil_image.convert("RGB")
 
+        # Resize the image while maintaining aspect ratio
+        pil_image.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+
         # Save into output BytesIO
         output_image = BytesIO()
-        pil_image.save(output_image, format="PNG")
+        pil_image.save(output_image, format="PNG", quality=85)
         output_image.seek(0)
 
         return output_image
@@ -96,12 +100,14 @@ async def generate_avatar_url(user_id: UUID, image_url: str) -> Optional[str]:
 
     try:
         image_data, extension = await download_image(image_url=image_url)
+        my_logger.debug(f"generate_avatar_url image_data, extension : _, {extension}")
         if image_data:
-            image_bytes: BytesIO = await prepare_image_data(image_data=image_data)
-            if image_bytes:
+            image_stream: BytesIO = await prepare_image_data(image_data=image_data)
+            image_data: bytes = image_stream.read()
+            if image_data:
                 print(f"🔨 3 Uploading image of size {len(image_data)} bytes to MinIO.")
-                print(f"🔨 4 Uploading image of size {len(image_bytes.getbuffer())} bytes to MinIO.")
-                uploaded_object = await put_object_to_minio(object_name=f"users/{user_id.hex}/avatar.{extension}", data=image_bytes.read())
+                print(f"🔨 4 Uploading image of size {len(image_stream.getbuffer())} bytes to MinIO.")
+                uploaded_object = await put_object_to_minio(object_name=f"users/{user_id.hex}/avatar.{extension}", data_stream=BytesIO(image_data), length=len(image_data))
                 if uploaded_object:
                     print(f"✅ Successfully uploaded image to MinIO: {uploaded_object}")
                 return uploaded_object
