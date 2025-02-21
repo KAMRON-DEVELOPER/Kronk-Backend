@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     BASE_DIR: Optional[str] = str(Path(__file__).parent.parent.parent)
-    DATABASE_URL: Optional[str] = None
+    DATABASE_URL: Optional[str]  =None
     REDIS_URL: Optional[str] = None
 
     # MINIO
@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     # FASTAPI JWT
     SECRET_KEY: Optional[str] = None
     ALGORITHM: Optional[str] = None
-    ACCESS_TOKEN_EXPIRE_TIME: Optional[int] = None
-    REFRESH_TOKEN_EXPIRE_TIME: Optional[int] = None
+    ACCESS_TOKEN_EXPIRE_TIME: Optional[str] = None
+    REFRESH_TOKEN_EXPIRE_TIME: Optional[str] = None
 
     # EMAIL
     EMAIL_SERVICE_API_KEY: Optional[str] = None

@@ -1,5 +1,4 @@
 import math
-from app.utility.my_logger import my_logger
 import time
 from datetime import datetime, timedelta
 from typing import Optional
@@ -8,9 +7,10 @@ from uuid import UUID, uuid4
 from app.community_app.models import PostModel, ReactionEnum
 from app.settings.my_config import get_settings
 from app.users_app.models import UserModel
+from app.utility.my_logger import my_logger
 from redis.asyncio import Redis
 
-my_redis = Redis.from_url(url=get_settings().REDIS_URL, decode_responses=True, auto_close_connection_pool=True)
+my_redis = Redis.from_url(url=f"{get_settings().REDIS_URL}", decode_responses=True, auto_close_connection_pool=True)
 
 
 async def redis_om_ready() -> bool:
@@ -39,7 +39,7 @@ class CacheManager:
         self.reset_password_prefix = "reset_password:"
 
     ## ---------------------------------------- TIMELINE MANAGEMENT ----------------------------------------
-    async def _add_post_to_gt(self, post_id: str, amount: int = 180):
+    async def _add_post_to_gt(self, post_id: str, amount: int = 180) -> None:
         """Add post ID to global timeline and keep only the latest amount of posts."""
         await self.redis.hset(name=f"{self.post_timestamp_key}", key=f"{post_id}", value=f"{int(time.time())}")
         if await self.redis.zcard(name=f"{self.global_timeline_key}") < amount:
@@ -47,28 +47,28 @@ class CacheManager:
 
     async def get_global_timeline(self, start: int = 0, end: int = 19) -> list[dict]:
         """Get global timeline with post metadata and statistics."""
-        gt_post_ids: list[bytes] = await self.redis.zrevrange(name=self.global_timeline_key, start=start, end=end)
+        gt_post_ids: list[str] = await self.redis.zrevrange(name=self.global_timeline_key, start=start, end=end)
+        my_logger.debug(f"gt_post_ids: {gt_post_ids}")
         if not gt_post_ids:
             return []
 
         gt_posts = await self._get_posts(post_ids=gt_post_ids)
+        my_logger.debug(f"gt_posts: {gt_posts}")
         return gt_posts
 
-    async def add_post_to_ht(self, user_id: str, post_id: str, start: int = 0, end: int = 59):
+    async def add_post_to_ht(self, user_id: str, post_id: str, start: int = 0, end: int = 59) -> None:
         """Add post to home timeline and trim in specified range"""
         await self.redis.lpush(f"{self.home_timeline_prefix}{user_id}", post_id)
         await self.redis.ltrim(name=f"{self.home_timeline_prefix}{user_id}", start=start, end=end)
 
     async def get_home_timeline(self, user_id: str, start: int = 0, end: int = 19) -> list[dict]:
         """Get home timeline with post metadata, merging user's feed with global timeline."""
-        ht_post_ids: list[bytes] = await self.redis.lrange(name=f"{self.home_timeline_prefix}{user_id}", start=start, end=end)
+        ht_post_ids: list[str] = await self.redis.lrange(name=f"{self.home_timeline_prefix}{user_id}", start=start, end=end)
 
         if not ht_post_ids:
-            # If home timeline is empty, return empty list(fall back to global timeline)
             return await self.get_global_timeline(start, end)
 
-        home_posts = await self._get_posts(post_ids=ht_post_ids)
-        return home_posts
+        return await self._get_posts(post_ids=ht_post_ids)
 
     async def add_post_to_ut(self, user_id: str, post_id: str, start: int = 0, end: int = 4000):
         """Push post ID to user timeline in Redis List."""
@@ -76,12 +76,19 @@ class CacheManager:
         await self.redis.ltrim(name=f"{self.user_timeline_prefix}{user_id}", start=start, end=end)
 
     async def get_user_timeline(self, user_id: str, start: int = 0, end: int = 19) -> list[dict]:
-        """Get user posts"""
-        return await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=start, end=end)
+        """Get user timeline posts with stats."""
+        ut_post_ids = await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=start, end=end)
+
+        if not ut_post_ids:
+            return []
+
+        my_logger.debug(f"user_timeline_post_ids: {ut_post_ids}")
+        # Fetch post metadata and stats
+        return await self._get_posts(post_ids=ut_post_ids)
 
     async def get_single_post(self, post_id: str) -> dict:
         """Get single post with given specific post id."""
-        posts = await self._get_posts(post_ids=[post_id.encode()])
+        posts = await self._get_posts(post_ids=[post_id])
         return posts[0] if posts else {}
 
     async def update_post_stats(self, post_id: str, key: str, value: str):
@@ -102,26 +109,33 @@ class CacheManager:
         await self.redis.zadd(name=self.global_timeline_key, mapping={post_id: score})
         await self.redis.zremrangebyrank(name=self.global_timeline_key, min=0, max=180)
 
-    async def _get_post_stats(self, post_id: str) -> tuple[int, int, int, int, int, int]:
-        """Get post statistics as a tuple (comments, reposts, quotes, likes, dislikes, views)."""
-        stats_dict_bytes = await self.redis.hgetall(f"{self.post_stats_prefix}{post_id}")
-        stats = {k.decode(): int(v.decode()) for k, v in stats_dict_bytes.items()} if stats_dict_bytes else {}
-        return scores_getter(stats=stats)
+    async def _get_posts_stats(self, post_ids: list[str]) -> list[tuple[int, int, int, int, int, int]]:
+        """Fetch stats for multiple posts using a Redis pipeline."""
 
-    async def _get_posts(self, post_ids: list[bytes]):
         async with self.redis.pipeline() as pipe:
-            # Fetch post metadata
-            for post_id in post_ids:
-                await pipe.hgetall(f"{self.post_meta_prefix}{post_id.decode()}")
-            post_meta_bytes_list = await pipe.execute()
+            [pipe.hgetall(f"{self.post_stats_prefix}{post_id}") for post_id in post_ids]
+            stats_dict = await pipe.execute()
 
-        # Decode metadata
-        posts = [meta_bytes for meta_bytes in post_meta_bytes_list]
+        # Convert stats dictionary and use list comprehension for efficiency
+        return [scores_getter(stats={k: int(v) for k, v in stats_dict.items()} if stats_dict else {}) for stats_dict in stats_dict]
 
-        # Fetch post stats
-        for post, post_id in zip(posts, post_ids):
-            stat = await self._get_post_stats(post_id.decode())
-            post.update({"comments": stat[0], "reposts": stat[1], "quotes": stat[2], "likes": stat[3], "dislikes": stat[4], "views": stat[5]})
+    async def _get_posts(self, post_ids: list[str]) -> list[dict]:
+        """Fetch post metadata and bind stats to posts."""
+        async with self.redis.pipeline() as pipe:
+            [pipe.hgetall(f"{self.post_meta_prefix}{post_id}") for post_id in post_ids]
+            post_dict_list: list[dict] = await pipe.execute()
+
+        my_logger.debug(f"post_dict_list: {post_dict_list}")
+        # Ensure the list comprehension structure is used efficiently
+        posts = [post_dict for post_dict in post_dict_list if post_dict]
+        my_logger.debug(f"posts: {posts}")
+
+        stats_list = await self._get_posts_stats(post_ids=post_ids)
+        my_logger.debug(f"stats_list: {stats_list}")
+
+        # Bind stats to posts
+        for post, stats in zip(posts, stats_list):
+            post.update({"comments": stats[0], "reposts": stats[1], "quotes": stats[2], "likes": stats[3], "dislikes": stats[4], "views": stats[5]})
 
         return posts
 

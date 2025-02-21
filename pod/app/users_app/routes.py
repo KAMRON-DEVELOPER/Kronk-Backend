@@ -1,3 +1,4 @@
+from io import BytesIO
 from random import randint
 from typing import Optional
 
@@ -87,13 +88,13 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
         new_user: UserModel = await UserModel.create(
             username=registration_data.get("username"),
             email=registration_data.get("email"),
-            password=hashpw(password=registration_data.get("password").encode(), salt=gensalt(rounds=8)).decode(),
+            password=hashpw(password=registration_data.get("password", "").encode(), salt=gensalt(rounds=8)).decode(),
         )
 
         await cache_manager.create_user_profile(new_user=new_user)
         await cache_manager.remove_registration_credentials(verify_token=header_token_dependency.verify_token)
 
-        return generate_token_response(db_user=new_user)
+        return generate_token_response(user_id=new_user.id.hex)
     except ValueError as e:
         print(f"ValueError in verify_user: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -106,10 +107,12 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
 async def login_user(login_schema: LoginSchema):
     try:
         await login_schema.model_async_validate()
+        if login_schema.username is None or login_schema.password is None:
+            return
 
         user_data: dict = await cache_manager.get_user_profile_by_username(username=login_schema.username)
         if user_data:
-            if not checkpw(login_schema.password.encode(), user_data.get("password")):
+            if not checkpw(login_schema.password.encode(), f"{user_data.get("password")}".encode()):
                 raise ValueError("password is not match.")
 
             return user_data
@@ -123,7 +126,7 @@ async def login_user(login_schema: LoginSchema):
 
         await cache_manager.create_user_profile(new_user=db_user)
 
-        return generate_token_response(db_user=db_user)
+        return generate_token_response(user_id=db_user.id.hex)
     except ValueError as e:
         print(f"ValueError in login_user: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -172,7 +175,8 @@ async def request_reset_password(request_reset_password_schema: RequestResetPass
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in request_reset_password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
 
 
 @users_router.post(path="/reset-password", status_code=status.HTTP_200_OK)
@@ -209,7 +213,7 @@ async def reset_password(reset_password_schema: ResetPasswordSchema, header_toke
         await db_user.save()
         await cache_manager.remove_reset_password_credentials(reset_password_token=header_token_dependency.reset_password_token)
 
-        return generate_token_response(db_user=db_user)
+        return generate_token_response(user_id=db_user.id.hex)
     except ValueError as e:
         print(f"ValueError in reset_password: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -230,7 +234,7 @@ async def refresh(jwt_refresh_dependency: jwtRefreshDependency):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while refreshing the token.")
 
 
-@users_router.post(path="/google-auth", status_code=status.HTTP_201_CREATED)
+@users_router.post(path="/google_auth", status_code=status.HTTP_201_CREATED)
 async def google_auth(header_token_dependency: headerTokenDependency):
     try:
         if not header_token_dependency.firebase_id_token:
@@ -242,7 +246,7 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 
         db_user: Optional[UserModel] = await UserModel.get_or_none(email=firebase_user.email)
         if db_user:
-            return generate_token_response(db_user=db_user)
+            return generate_token_response(user_id=db_user.id.hex)
 
         username: str = generate_unique_username(base_name=firebase_user.display_name)
         password_string: str = generate_password_string()
@@ -259,7 +263,7 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 
         await send_email_task.kiq(to_email=new_user.email, username=new_user.username, for_thanks_signing_up=True)
 
-        return generate_token_response(db_user=new_user)
+        return generate_token_response(user_id=new_user.id.hex)
     except ValueError as e:
         print(f"ValueError in social_auth: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -320,7 +324,8 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtAcc
                 if file_extension not in allowed_image_extension:
                     raise ValueError("🚫 Only PNG, JPG, and JPEG formats are allowed for avatars. No sneaky formats! ")
                 object_name = f"users/{db_user.id.hex}/avatar.{file_extension}"
-                avatar_object_name: str = await put_object_to_minio(object_name=object_name, data=await update_schema.avatar_file.read())
+                avatar_bytes = await update_schema.avatar_file.read()
+                avatar_object_name: str = await put_object_to_minio(object_name=object_name, data_stream=BytesIO(avatar_bytes), length=len(avatar_bytes))
                 update_schema.avatar = avatar_object_name
 
         if update_schema.banner_file is not None:
@@ -333,7 +338,8 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtAcc
                 if file_extension not in allowed_image_extension:
                     raise ValueError("Only png, jpg, jpeg image types allowed for banner image.")
                 object_name = f"users/{db_user.id.hex}/banner.{file_extension}"
-                banner_object_name: str = await put_object_to_minio(object_name=object_name, data=await update_schema.banner_file.read())
+                banner_bytes = await update_schema.banner_file.read()
+                banner_object_name: str = await put_object_to_minio(object_name=object_name, data_stream=BytesIO(banner_bytes), length=len(banner_bytes))
                 update_schema.banner = banner_object_name
 
         update_ready_data: dict = update_schema.model_dump(exclude_defaults=True)
@@ -415,8 +421,8 @@ async def delete_users():
     return {"message": "All users deleted. 🗑️"}
 
 
-def generate_token_response(db_user: UserModel):
-    subject = {"id": db_user.id.hex}
+def generate_token_response(user_id: str):
+    subject = {"id": user_id}
     return {
         "access_token": access_security.create_access_token(subject=subject),
         "refresh_token": refresh_security.create_refresh_token(subject=subject),

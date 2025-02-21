@@ -3,7 +3,6 @@ from typing import Optional
 
 import aiohttp
 from app.settings.my_config import get_settings
-from app.utility.my_logger import my_logger
 from miniopy_async import Minio
 
 # from miniopy_async.datatypes import ListObjects, Object
@@ -46,8 +45,8 @@ async def remove_object_from_minio(object_name: str) -> None:
 async def wipe_objects_from_minio(user_id: str) -> None:
     try:
         list_objects = await minio_client.list_objects(bucket_name=settings.MINIO_BUCKET_NAME, prefix=f"users/{user_id}/", recursive=True)
-        for object in list_objects:
-            await remove_object_from_minio(object_name=f"{object.object_name}")
+        for user_object in list_objects:
+            await remove_object_from_minio(object_name=f"{user_object.object_name}")
     except Exception as e:
         print(f"Exception in wipe_objects_from_minio: {e}")
         raise ValueError(f"Exception in wipe_objects_from_minio: {e}")

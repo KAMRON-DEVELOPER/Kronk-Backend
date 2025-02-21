@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from io import BytesIO
 from typing import Optional
 
 import aiofiles
@@ -47,7 +48,12 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
             for _value in value:
                 if get_file_extension(file=_value) not in allowed_image_extension:
                     raise ValueError("not supported image format provided.")
-                object_name = await put_object_to_minio(object_name=f"community_app/posts/images/{_value.filename}", data=await _value.read())
+                _value_bytes = await _value.read()
+                object_name = await put_object_to_minio(
+                    object_name=f"community_app/posts/images/{_value.filename}",
+                    data_stream=BytesIO(_value_bytes),
+                    length=len(_value_bytes),
+                )
                 self.images.append(object_name)
 
     @async_field_validator("video_file")
@@ -69,7 +75,7 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
 
         async with aiofiles.open(file=temp_file_path, mode="rb") as temp_file:
             video_bytes = await temp_file.read()
-            object_name = await put_object_to_minio(object_name=value.filename, data=video_bytes)
+            object_name = await put_object_to_minio(object_name=value.filename, data_stream=BytesIO(video_bytes), length=len(video_bytes))
             self.video = object_name
 
         os.remove(path=temp_file_path)
@@ -103,7 +109,13 @@ class PostUpdateSchema(AsyncValidationModelMixin, BaseModel):
         for _value in value:
             if get_file_extension(file=_value) not in allowed_image_extension:
                 raise ValueError("not supported image format provided.")
-            object_name = await put_object_to_minio(object_name=f"community_app/posts/images/{_value.filename}", data=await _value.read(), for_update=True)
+            _value_bytes = await _value.read()
+            object_name = await put_object_to_minio(
+                object_name=f"community_app/posts/images/{_value.filename}",
+                data_stream=BytesIO(_value_bytes),
+                length=len(_value_bytes),
+                for_update=True,
+            )
             self.images.append(object_name)
 
     @async_field_validator("video_file")
@@ -125,7 +137,7 @@ class PostUpdateSchema(AsyncValidationModelMixin, BaseModel):
 
         async with aiofiles.open(file=temp_file_path, mode="rb") as temp_file:
             video_bytes = await temp_file.read()
-            object_name = await put_object_to_minio(object_name=value.filename, data=video_bytes, for_update=True)
+            object_name = await put_object_to_minio(object_name=value.filename, data_stream=BytesIO(video_bytes), length=len(video_bytes), for_update=True)
             self.video = object_name
 
         os.remove(path=temp_file_path)

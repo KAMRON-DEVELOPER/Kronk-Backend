@@ -37,8 +37,6 @@ class PostModel(BaseModel):
 
     # Engagement Metrics
     comments_count = fields.IntField(default=0)
-    reposts_count = fields.IntField(default=0)
-    quotes_count = fields.IntField(default=0)
     likes_count = fields.IntField(default=0)
     dislikes_count = fields.IntField(default=0)
     views_count = fields.IntField(default=0)

@@ -57,7 +57,7 @@ class ZeptoMail:
 #     print("🗓️ my_task finished heavy task!")
 
 
-@broker.task(schedule=[{"cron": "*/30 * * * *"}])
+@broker.task(schedule=[{"cron": "*/60 * * * *"}])
 async def sync_post_stats() -> None:
     """Bulk update views, likes, and dislikes from Redis to DB."""
     print("🗓️ process_sync_events is started...")

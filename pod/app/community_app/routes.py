@@ -1,12 +1,12 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, status
-from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
-
 from app.community_app.models import PostModel, ReactionEnum
 from app.community_app.schemas import PostCreateScheme, PostUpdateSchema
 from app.settings.my_dependency import jwtAccessDependency
 from app.settings.my_redis import CacheManager, my_redis
+from app.utility.my_logger import my_logger
+from fastapi import APIRouter, HTTPException, status
+from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 community_router = APIRouter()
 
@@ -37,9 +37,9 @@ async def create_post(post_create_schema: PostCreateScheme, credentials: jwtAcce
 
 
 @community_router.get(path="/posts/home_timeline", status_code=status.HTTP_200_OK)
-async def get_home_timeline(credentials: jwtAccessDependency, start: int = 0, end: int = 19):
+async def get_home_timeline(jwt_access_dependency: jwtAccessDependency, start: int = 0, end: int = 19):
     try:
-        return await cache_manager.get_home_timeline(user_id=credentials.subject["id"], start=start, end=end)
+        return await cache_manager.get_home_timeline(user_id=jwt_access_dependency.subject["id"], start=start, end=end)
     except Exception as e:
         print(f"Exception in get_home_timeline_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in get_home_timeline_route: {e}")
@@ -49,6 +49,9 @@ async def get_home_timeline(credentials: jwtAccessDependency, start: int = 0, en
 async def get_global_timeline_route(_: jwtAccessDependency, start: int = 0, end: int = 19):
     try:
         return await cache_manager.get_global_timeline(start=start, end=end)
+    except ValueError as e:
+        print(f"ValueError in get_global_timeline: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in get_global_timeline: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in get_global_timeline: {e}")
@@ -132,6 +135,23 @@ async def delete_post_route(post_id: str, credentials: jwtAccessDependency):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in create_post_route: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server error occurred while creating post.")
+
+
+@community_router.get(path="/posts/user_timeline", status_code=status.HTTP_200_OK)
+async def user_timeline(jwt_access_dependency: jwtAccessDependency, start: int = 0, end: int = 19):
+    try:
+        user_timeline_posts: list[dict] = await cache_manager.get_user_timeline(user_id=jwt_access_dependency.subject["id"], start=start, end=end)
+        
+        if not user_timeline_posts:
+            return []
+        
+        return user_timeline_posts
+    except ValueError as e:
+        my_logger.debug(f"ValueError in create_post_route: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
+    except Exception as e:
+        my_logger.debug(f"Exception in user_timeline route: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server error occurred while creating post.")
 
 
