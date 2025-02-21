@@ -26,6 +26,7 @@ dependencies = [
     "taskiq-redis",
     "taskiq[reload]",
     "tortoise-orm",
+    "types-redis>=4.6.0.20241004",
     "uvicorn",
     "websockets",
 ]
@@ -38,8 +39,8 @@ include = ["."]
 venvPath = "./"
 venv = ".venv"
 extraPaths = [".venv", ".env", "venv", "env"]
-typeCheckingMode = "basic"
-pythonVersion = "3.12"
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
 
 [tool.ruff]
 target-version = "py312"
