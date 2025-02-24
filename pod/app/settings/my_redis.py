@@ -274,7 +274,10 @@ class CacheManager:
 
     ## ---------------------------------------- KRONK STATISTICS ----------------------------------------
     async def get_user_count(self) -> int:
-        return await self.redis.scard("usernames")
+        users_count = await self.redis.hget("registered_users", key="users_count")
+        if not users_count:
+            return 0
+        return users_count
 
     async def exists(self, name: str):
         return await self.redis.exists(name)

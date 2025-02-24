@@ -1,9 +1,11 @@
 # from app.users_app.models import UserModel
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from tortoise.exceptions import ConfigurationError
+import asyncio
+import random
 
 from app.settings.my_minio import minio_ready
 from app.settings.my_redis import CacheManager, my_redis, redis_om_ready
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from tortoise.exceptions import ConfigurationError
 
 admin_router = APIRouter()
 
@@ -31,10 +33,6 @@ async def tortoise_ready() -> bool:
         return False
 
 
-async def send_personal_message(message: str, websocket: WebSocket):
-    await websocket.send_text(data=message)
-
-
 class ConnectionManager:
     def __init__(self):
         self.active_connections: list[WebSocket] = []
@@ -46,40 +44,37 @@ class ConnectionManager:
     def disconnect(self, websocket: WebSocket):
         self.active_connections.remove(websocket)
 
-    async def broadcast(self, message: str):
+    async def send_personal_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, data: dict):
         for connection in self.active_connections:
-            await connection.send_text(data=message)
+            await connection.send_json(data=data)
 
 
 admin_connection_manager = ConnectionManager()
 
 
-@admin_router.websocket(path="")
-async def websocket_endpoint(websocket: WebSocket):
-    await admin_connection_manager.connect(websocket=websocket)
+metrics_connection_manager = ConnectionManager()
+
+# Mock statistics data
+statistics = {"registered_users": 100, "active_users": 50}
+
+
+# Function to simulate real-time updates
+async def update_statistics():
+    global statistics
+    while True:
+        await asyncio.sleep(5)  # Update every 5 seconds
+        statistics["total_users"] += random.randint(1, 5)
+        statistics["active_users"] += random.randint(1, 3)
+
+
+@admin_router.websocket(path="/ws/admin/statistics")
+async def settings_metrics(websocket: WebSocket):
+    await metrics_connection_manager.connect(websocket=websocket)
     print("🚧 Client connected")
-    try:
-        while True:
-            data: str = await websocket.receive_text()
-            await admin_connection_manager.broadcast(message=f"📡 {data}")
-    except WebSocketDisconnect:
-        admin_connection_manager.disconnect(websocket=websocket)
-        print("🚧 Client disconnected")
 
-
-@admin_router.websocket(path="/stats")
-async def websocket_endpoint(websocket: WebSocket):
-    await admin_connection_manager.connect(websocket=websocket)
-    print("🚧 Client connected")
-
-    # Send the current user count on connection
-    user_count = await cache_manager.get_user_count()
-    await websocket.send_text(f"User Count: {user_count}")
-
-    try:
-        while True:
-            data: str = await websocket.receive_text()
-            await admin_connection_manager.broadcast(f"📡 {data}")
-    except WebSocketDisconnect:
-        admin_connection_manager.disconnect(websocket)
-        print("🚧 Client disconnected")
+    while True:
+        await metrics_connection_manager.broadcast(data=statistics)
+        await asyncio.sleep(5)  # Send updates every 5 seconds

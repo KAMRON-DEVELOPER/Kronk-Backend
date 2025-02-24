@@ -40,4 +40,7 @@ class UserModel(BaseModel):
         exclude = ("password",)
 
     def __str__(self):
-        return "🚧 UserModel"
+        return f"🚧 UserModel: {self.username}"
+
+    def __repr__(self):
+        return f"🚧 UserModel: {self.username}"

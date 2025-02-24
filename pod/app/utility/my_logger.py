@@ -7,23 +7,23 @@ from loguru import logger as my_logger
 def custom_log_sink(message):
     """Custom Loguru Sink - Extracts Stack Trace and Formats Logs."""
     # ANSI color codes for console
-    RESET = "\033[0m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
-    MAGENTA = "\033[35m"
-    CYAN = "\033[36m"
-    WHITE = "\033[37m"
+    reset = "\033[0m"
+    red = "\033[31m"
+    green = "\033[32m"
+    yellow = "\033[33m"
+    blue = "\033[34m"
+    magenta = "\033[35m"
+    cyan = "\033[36m"
+    white = "\033[37m"
 
     # Log level mapping with colors and emojis
-    LOG_LEVELS = {
-        "TRACE": {"emoji": "🔍", "color": CYAN},
-        "DEBUG": {"emoji": "🐛", "color": BLUE},
-        "INFO": {"emoji": "💡", "color": GREEN},
-        "WARNING": {"emoji": "🚨", "color": YELLOW},
-        "ERROR": {"emoji": "🌋", "color": RED},
-        "CRITICAL": {"emoji": "👾", "color": MAGENTA},
+    log_levels = {
+        "TRACE": {"emoji": "🔍", "color": cyan},
+        "DEBUG": {"emoji": "🐛", "color": blue},
+        "INFO": {"emoji": "💡", "color": green},
+        "WARNING": {"emoji": "🚨", "color": yellow},
+        "ERROR": {"emoji": "🌋", "color": red},
+        "CRITICAL": {"emoji": "👾", "color": magenta},
     }
 
     record = message.record
@@ -33,11 +33,11 @@ def custom_log_sink(message):
 
     # Extract log level information
     level = record["level"].name
-    color = LOG_LEVELS.get(level, {}).get("color", WHITE)
-    emoji = LOG_LEVELS.get(level, {}).get("emoji", "📌")
+    color = log_levels.get(level, {}).get("color", white)
+    emoji = log_levels.get(level, {}).get("emoji", "📌")
 
     # Print to standard output
-    sys.stdout.write(f"{color}({relative_path})    {emoji} {message}{RESET}\n")
+    sys.stdout.write(f"{color}({relative_path})    {emoji} {message}{reset}\n")
 
 
 my_logger.remove()

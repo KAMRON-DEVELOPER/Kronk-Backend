@@ -4,13 +4,14 @@ from app.admin_app.routes import admin_router
 from app.community_app.routes import community_router
 from app.education_app.routes import education_router
 from app.my_taskiq.my_taskiq import broker
-from app.utility.my_logger import my_logger
-from app.users_app.routes import users_router
-from fastapi import FastAPI
-from firebase_admin import initialize_app
-from tortoise.contrib.fastapi import register_tortoise
 from app.settings.my_config import get_settings
 from app.settings.my_redis import my_redis
+from app.users_app.routes import users_router
+from app.utility.my_logger import my_logger
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from firebase_admin import initialize_app
+from tortoise.contrib.fastapi import register_tortoise
 
 settings = get_settings()
 
@@ -25,6 +26,8 @@ async def app_lifespan(_: FastAPI):
 
 
 app: FastAPI = FastAPI(lifespan=app_lifespan)
+
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(router=users_router, prefix="/users", tags=["users"])
 app.include_router(router=community_router, prefix="/community", tags=["community"])
