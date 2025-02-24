@@ -282,6 +282,12 @@ class CacheManager:
     async def exists(self, name: str):
         return await self.redis.exists(name)
 
+    async def get_statistics(self) -> dict:
+        users_count = await self.redis.hget("registered_users", key="users_count")
+        if not users_count:
+            return {"registered_users": 0, "active_users": 0}
+        return {"registered_users": users_count, "active_users": 0}
+
     ## ---------------------------------------- REGISTRATION & RESET PASSWORD CREDENTIALS ----------------------------------------
     async def set_registration_credentials(self, username: str, email: str, password: str, code: str, expiry: int = 600) -> tuple[str, str]:
         """Store registration credentials and return token and expiration time."""

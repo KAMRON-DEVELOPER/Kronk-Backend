@@ -4,7 +4,8 @@ import random
 
 from app.settings.my_minio import minio_ready
 from app.settings.my_redis import CacheManager, my_redis, redis_om_ready
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from app.utility.my_logger import my_logger
+from fastapi import APIRouter, WebSocket  # WebSocketDisconnect
 from tortoise.exceptions import ConfigurationError
 
 admin_router = APIRouter()
@@ -75,6 +76,21 @@ async def settings_metrics(websocket: WebSocket):
     await metrics_connection_manager.connect(websocket=websocket)
     print("🚧 Client connected")
 
-    while True:
-        await metrics_connection_manager.broadcast(data=statistics)
-        await asyncio.sleep(5)  # Send updates every 5 seconds
+    try:
+        last_sent_stats = {}
+        while True:
+            new_stats = await cache_manager.get_statistics()
+
+            my_logger.info(f"📊 last_sent_stats: {last_sent_stats}")
+            my_logger.info(f"📊 new_stats: {new_stats}")
+            my_logger.info(f"≈: {new_stats==last_sent_stats}")
+
+            if new_stats != last_sent_stats:
+                await metrics_connection_manager.broadcast(data=statistics)
+                last_sent_stats = new_stats
+
+            await asyncio.sleep(5)  # Send updates every 5 seconds
+    except Exception as e:
+        my_logger.critical(f"Exception in settings_metrics(admin): {e}")
+    finally:
+        metrics_connection_manager.disconnect(websocket)
