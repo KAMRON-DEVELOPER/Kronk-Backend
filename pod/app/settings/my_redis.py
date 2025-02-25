@@ -227,36 +227,38 @@ class CacheManager:
     async def delete_user_profile(self, user_id: str, username: str, email: str):
         """Delete a user profile and associated data."""
 
-        pipe = self.redis.pipeline()
+        async with my_redis.pipeline() as pipe:
 
+        # Delete user profile and all related keys
+            pipe.delete(
+                f"{self.home_timeline_prefix}{user_id}",
+                f"{self.user_timeline_prefix}{user_id}",
+                f"{self.user_profile_prefix}{user_id}",
+                f"{self.followers_prefix}{user_id}",
+                f"{self.following_prefix}{user_id}"
+            )
+            pipe.srem("profiles", user_id)
+            pipe.hdel("usernames", username)
+            pipe.hdel("emails", email)
+
+            await pipe.execute()
+
+        post_ids: list[str] = await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=0, end=-1)
+        my_logger.info(f'post_ids: {post_ids}')
+        for post_id in post_ids:
+            await self.delete_post(post_id, user_id)
+            
         # Remove follow relationships
         followers: set[str] = await self.get_followers(user_id)
         following: set[str] = await self.get_following(user_id)
+        
+        my_logger.info(f'followers: {followers}, following: {following}')
 
         for follower_id in followers:
-            await pipe.srem(f"{self.following_prefix}{follower_id}", user_id)
+            pipe.srem(f"{self.following_prefix}{follower_id}", user_id)
 
         for followed_id in following:
-            await pipe.srem(f"{self.followers_prefix}{followed_id}", user_id)
-
-        # Delete user profile and all related keys
-        await pipe.delete(
-            f"{self.home_timeline_prefix}{user_id}",
-            f"{self.user_timeline_prefix}{user_id}",
-            f"{self.user_profile_prefix}{user_id}",
-            f"{self.followers_prefix}{user_id}",
-            f"{self.following_prefix}{user_id}",
-        )
-
-        await pipe.execute()
-
-        post_ids: list[str] = await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=0, end=-1)
-        for post_id in post_ids:
-            await self.delete_post(post_id, user_id)
-
-        await self.redis.srem("profiles", user_id)
-        await self.redis.hdel("usernames", username)
-        await self.redis.hdel("emails", email)
+            pipe.srem(f"{self.followers_prefix}{followed_id}", user_id)
 
     ## ---------------------------------------- TRACK USER ACTIONS ----------------------------------------
 
@@ -283,10 +285,10 @@ class CacheManager:
         return await self.redis.exists(name)
 
     async def get_statistics(self) -> dict:
-        users_count = await self.redis.hget("registered_users", key="users_count")
-        if not users_count:
-            return {"registered_users": 0, "active_users": 0}
-        return {"registered_users": users_count, "active_users": 0}
+        statistics = await self.redis.hgetall("statistics")
+        if not statistics:
+            return {"registered_users": 0, "daily_active_users": 0}
+        return statistics
 
     ## ---------------------------------------- REGISTRATION & RESET PASSWORD CREDENTIALS ----------------------------------------
     async def set_registration_credentials(self, username: str, email: str, password: str, code: str, expiry: int = 600) -> tuple[str, str]:

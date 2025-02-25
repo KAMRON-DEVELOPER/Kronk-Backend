@@ -1,11 +1,7 @@
-# from app.users_app.models import UserModel
-import asyncio
-import random
-
 from app.settings.my_minio import minio_ready
 from app.settings.my_redis import CacheManager, my_redis, redis_om_ready
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, WebSocket  # WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from tortoise.exceptions import ConfigurationError
 
 admin_router = APIRouter()
@@ -58,39 +54,19 @@ admin_connection_manager = ConnectionManager()
 
 metrics_connection_manager = ConnectionManager()
 
-# Mock statistics data
-statistics = {"registered_users": 100, "active_users": 50}
-
-
-# Function to simulate real-time updates
-async def update_statistics():
-    global statistics
-    while True:
-        await asyncio.sleep(5)  # Update every 5 seconds
-        statistics["total_users"] += random.randint(1, 5)
-        statistics["active_users"] += random.randint(1, 3)
-
 
 @admin_router.websocket(path="/ws/admin/statistics")
 async def settings_metrics(websocket: WebSocket):
     await metrics_connection_manager.connect(websocket=websocket)
     print("🚧 Client connected")
 
+    statistics = await cache_manager.get_statistics()
+    await metrics_connection_manager.broadcast(data=statistics)
+
     try:
-        last_sent_stats = {}
         while True:
-            new_stats = await cache_manager.get_statistics()
-
-            my_logger.info(f"📊 last_sent_stats: {last_sent_stats}")
-            my_logger.info(f"📊 new_stats: {new_stats}")
-            my_logger.info(f"≈: {new_stats==last_sent_stats}")
-
-            if new_stats != last_sent_stats:
-                await metrics_connection_manager.broadcast(data=statistics)
-                last_sent_stats = new_stats
-
-            await asyncio.sleep(5)  # Send updates every 5 seconds
-    except Exception as e:
-        my_logger.critical(f"Exception in settings_metrics(admin): {e}")
-    finally:
+            data = await websocket.receive_text()
+            my_logger.info(f"📨 received_text in settings_metrics data: {data}")
+    except WebSocketDisconnect:
+        my_logger.info("👋 websocket connection is closing...")
         metrics_connection_manager.disconnect(websocket)

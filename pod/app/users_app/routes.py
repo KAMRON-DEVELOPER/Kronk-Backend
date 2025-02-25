@@ -2,7 +2,7 @@ from io import BytesIO
 from random import randint
 from typing import Optional
 
-from app.my_taskiq.my_taskiq import send_email_task
+from app.my_taskiq.my_taskiq import broadcast_stats_to_settings_task, send_email_task
 from app.services.firebase_service import validate_firebase_token
 from app.settings.my_dependency import access_security, headerTokenDependency, jwtAccessDependency, jwtRefreshDependency, refresh_security
 from app.settings.my_minio import put_object_to_minio, remove_object_from_minio, wipe_objects_from_minio
@@ -94,6 +94,8 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
         await cache_manager.create_user_profile(new_user=new_user)
         await cache_manager.remove_registration_credentials(verify_token=header_token_dependency.verify_token)
 
+        await broadcast_stats_to_settings_task.kiq()
+
         return generate_token_response(user_id=new_user.id.hex)
     except ValueError as e:
         print(f"ValueError in verify_user: {e}")
@@ -175,8 +177,7 @@ async def request_reset_password(request_reset_password_schema: RequestResetPass
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in request_reset_password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
 
 
 @users_router.post(path="/reset-password", status_code=status.HTTP_200_OK)
@@ -261,6 +262,7 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 
         await cache_manager.create_user_profile(new_user=new_user)
 
+        await broadcast_stats_to_settings_task.kiq()
         await send_email_task.kiq(to_email=new_user.email, username=new_user.username, for_thanks_signing_up=True)
 
         return generate_token_response(user_id=new_user.id.hex)
@@ -398,21 +400,20 @@ async def get_users():
 @users_router.delete(path="/profile-delete-by-id", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user_by_id(user_id: str):
     try:
+        # delete all media files
+        await wipe_objects_from_minio(user_id=user_id)
+
         # delete from database
         db_user: Optional[UserModel] = await UserModel.get_or_none(id=user_id)
-
         if db_user:
             # delete from redis
             await cache_manager.delete_user_profile(user_id=user_id, username=db_user.username, email=db_user.email)
             await db_user.delete()
 
-        # delete all media files
-        await wipe_objects_from_minio(user_id=user_id)
-
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return {}
     except Exception as e:
-        print(f"Exception in delete_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while deleting the user.")
+        print(f"Exception in delete_user_by_id: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal server error occurred while deleting the user by id.")
 
 
 @users_router.get(path="/delete_all_users", status_code=status.HTTP_204_NO_CONTENT)

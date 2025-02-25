@@ -1,13 +1,20 @@
 import asyncio
 
 import aiohttp
+from app.admin_app.routes import metrics_connection_manager
 from app.community_app.models import PostModel
 from app.settings.my_config import get_settings
-from app.settings.my_redis import my_redis
+from app.settings.my_redis import CacheManager, my_redis
+from app.utility.my_logger import my_logger
+from fastapi import APIRouter
 from taskiq import TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 from tortoise.expressions import F
+
+admin_router = APIRouter()
+
+cache_manager = CacheManager(redis=my_redis)
 
 broker = ListQueueBroker(
     url="redis://default:kamronbek2003@localhost:6379/1",
@@ -17,7 +24,7 @@ broker = ListQueueBroker(
 scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker=broker)])
 
 
-@broker.task
+@broker.task(task_name="send_email_task")
 async def send_email_task(to_email: str, username: str, code: str = "0000", for_reset_password: bool = False, for_thanks_signing_up: bool = False):
     zepto = ZeptoMail()
     await zepto.send_email(to_email, username, code, for_reset_password, for_thanks_signing_up)
@@ -49,17 +56,28 @@ class ZeptoMail:
                 return {"status": "🌋"}
 
 
-# @broker.task(schedule=[{"cron": "*/4 * * * *"}])
-# async def my_task() -> None:
-#     """Example task."""
-#     print("🗓️ my_task started heavy task!")
-#     await asyncio.sleep(delay=10)
-#     print("🗓️ my_task finished heavy task!")
+last_sent_stats = {}
 
 
-@broker.task(schedule=[{"cron": "*/60 * * * *"}])
-async def sync_post_stats() -> None:
-    """Bulk update views, likes, and dislikes from Redis to DB."""
+@broker.task(task_name="broadcast_stats_to_settings_task")
+async def broadcast_stats_to_settings_task() -> None:
+    global last_sent_stats
+    try:
+        new_stats = await cache_manager.get_statistics()
+
+        my_logger.info(f"📊 last_sent_stats: {last_sent_stats}")
+        my_logger.info(f"📊 new_stats: {new_stats}")
+        my_logger.info(f"≈: {new_stats==last_sent_stats}")
+
+        if new_stats != last_sent_stats:
+            await metrics_connection_manager.broadcast(data=new_stats)
+            last_sent_stats = new_stats
+    except Exception as e:
+        my_logger.critical(f"Exception in broadcast_stats_to_settings_task: {e}")
+
+
+@broker.task(schedule=[{"cron": "*/60 * * * *"}], task_name="sync_post_stats_task")
+async def sync_post_stats_task() -> None:
     print("🗓️ process_sync_events is started...")
     await asyncio.sleep(delay=60)
     print("🗓️ process_sync_events is finished...")
