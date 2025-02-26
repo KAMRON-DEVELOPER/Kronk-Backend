@@ -1,14 +1,14 @@
-from typing import Optional
+from typing import Optional, Annotated
 
 from app.admin_app.routes import ConnectionManager
 from app.community_app.models import PostModel, ReactionEnum
 from app.community_app.schemas import PostCreateScheme, PostUpdateSchema
-from app.settings.my_dependency import jwtAccessDependency
+from app.settings.my_dependency import jwtAccessDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, WebSocketException
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket, WebSocketDisconnect, Query, Header
 
 community_router = APIRouter()
 
@@ -181,9 +181,22 @@ async def generate_post_response(db_post: PostModel):
 # ************************************************** WS **************************************************
 
 
+async def get_token(websocket: WebSocket, token: Annotated[str | None, Query()] = None):
+    if token is None:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    return token
+
+
+async def get_header_token(websocket: WebSocket, authorization: Annotated[str | None, Header()] = None):
+    if authorization is None:
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    return authorization
+
+
 @community_router.websocket('/ws/new_post_notify')
-async def new_post_notify(websocket: WebSocket, jwt_access_dependency: jwtAccessDependency):
-    user_id = jwt_access_dependency.subject["id"]
+async def new_post_notify(user_ws: websocketDependency):
+    user_id: str = user_ws.user_id
+    websocket: WebSocket = user_ws.websocket
     await feed_connection_manager.connect(websocket=websocket, user_id=user_id)
 
     try:

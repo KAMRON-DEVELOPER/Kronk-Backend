@@ -4,7 +4,7 @@ from typing import Optional
 
 from app.my_taskiq.my_taskiq import broadcast_stats_to_settings_task, send_email_task
 from app.services.firebase_service import validate_firebase_token
-from app.settings.my_dependency import access_security, headerTokenDependency, jwtAccessDependency, jwtRefreshDependency, refresh_security
+from app.settings.my_dependency import headerTokenDependency, jwtAccessDependency, jwtRefreshDependency
 from app.settings.my_minio import put_object_to_minio, remove_object_from_minio, wipe_objects_from_minio
 from app.settings.my_redis import CacheManager, my_redis
 from app.users_app.models import UserModel
@@ -16,6 +16,7 @@ from bcrypt import checkpw, gensalt, hashpw
 from fastapi import APIRouter, HTTPException, status
 from firebase_admin.auth import UserRecord
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
+from app.utility.jwt_utils import create_access_token, create_refresh_token
 
 users_router = APIRouter()
 
@@ -67,7 +68,8 @@ async def register(register_schema: RegisterSchema, header_token_dependency: hea
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e} ")
     except Exception as e:
         print(f"Exception in register_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
 
 
 @users_router.post(path="/verify", status_code=status.HTTP_200_OK)
@@ -102,7 +104,8 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in verify_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
 
 
 @users_router.post(path="/login", status_code=status.HTTP_200_OK)
@@ -134,24 +137,26 @@ async def login_user(login_schema: LoginSchema):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/logout", status_code=status.HTTP_200_OK)
 async def logout(jwt_access_dependency: jwtAccessDependency):
     try:
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
         if not db_user:
             return {}
 
-        await cache_manager.delete_user_profile(user_id=jwt_access_dependency.subject["id"], username=db_user.username, email=db_user.email)
+        await cache_manager.delete_user_profile(user_id=jwt_access_dependency.user_id, username=db_user.username, email=db_user.email)
         return {}
     except ValueError as e:
         print(f"ValueError in login_user: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/request-reset-password", status_code=status.HTTP_200_OK)
@@ -177,7 +182,8 @@ async def request_reset_password(request_reset_password_schema: RequestResetPass
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in request_reset_password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
 
 
 @users_router.post(path="/reset-password", status_code=status.HTTP_200_OK)
@@ -226,8 +232,9 @@ async def reset_password(reset_password_schema: ResetPasswordSchema, header_toke
 @users_router.post(path="/refresh", status_code=status.HTTP_200_OK)
 async def refresh(jwt_refresh_dependency: jwtRefreshDependency):
     try:
-        access_token = access_security.create_access_token(subject=jwt_refresh_dependency.subject)
-        refresh_token = refresh_security.create_refresh_token(subject=jwt_refresh_dependency.subject)
+        subject = {"id": jwt_refresh_dependency.user_id}
+        access_token = create_access_token(subject=subject)
+        refresh_token = create_refresh_token(subject=subject)
 
         return {"access_token": access_token, "refresh_token": refresh_token}
     except Exception as e:
@@ -277,11 +284,11 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 @users_router.get(path="/profile", status_code=status.HTTP_200_OK)
 async def get_user(jwt_access_dependency: jwtAccessDependency):
     try:
-        user_data: dict = await cache_manager.get_user_profile(user_id=jwt_access_dependency.subject["id"])
+        user_data: dict = await cache_manager.get_user_profile(user_id=jwt_access_dependency.user_id)
         if user_data:
             return user_data
 
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
         if not db_user:
             raise ValueError("User not found")
 
@@ -301,7 +308,7 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtAcc
     try:
         await update_schema.model_async_validate()
 
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
         if not db_user:
             raise ValueError("User not found.")
 
@@ -365,13 +372,13 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtAcc
 async def delete_user(jwt_access_dependency: jwtAccessDependency):
     try:
         # delete all media files
-        await wipe_objects_from_minio(user_id=jwt_access_dependency.subject["id"])
+        await wipe_objects_from_minio(user_id=jwt_access_dependency.user_id)
 
         # delete from database
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.subject["id"])
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
         if db_user:
             # delete from redis
-            await cache_manager.delete_user_profile(user_id=jwt_access_dependency.subject["id"], username=db_user.username, email=db_user.email)
+            await cache_manager.delete_user_profile(user_id=jwt_access_dependency.user_id, username=db_user.username, email=db_user.email)
             await db_user.delete()
 
         return {}
@@ -425,8 +432,8 @@ async def delete_users():
 def generate_token_response(user_id: str):
     subject = {"id": user_id}
     return {
-        "access_token": access_security.create_access_token(subject=subject),
-        "refresh_token": refresh_security.create_refresh_token(subject=subject),
+        "access_token": create_access_token(subject=subject),
+        "refresh_token": create_refresh_token(subject=subject),
     }
 
 
