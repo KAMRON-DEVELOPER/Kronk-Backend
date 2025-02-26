@@ -279,7 +279,7 @@ class CacheManager:
         users_count = await self.redis.hget("registered_users", key="users_count")
         if not users_count:
             return 0
-        return users_count
+        return int(users_count)
 
     async def exists(self, name: str):
         return await self.redis.exists(name)

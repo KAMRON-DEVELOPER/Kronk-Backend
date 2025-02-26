@@ -32,7 +32,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["black>=24.10.0", "ipython>=8.29.0", "isort>=5.13.2"]
+dev = [
+    "black>=24.10.0",
+    "faker>=36.1.1",
+ "ipython>=8.29.0",
+ "isort>=5.13.2",
+]
 
 [tool.pyright]
 include = ["."]

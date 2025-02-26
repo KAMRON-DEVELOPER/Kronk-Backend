@@ -29,7 +29,7 @@ class RegisterSchema(AsyncValidationModelMixin, BaseModel):
         validate_email(email=value)
 
     @async_field_validator("password")
-    async def validate_password(self, value: Optional[str]):
+    async def validate_password(self, value: Optional[str]) -> None:
         if value is None:
             raise ValueError("Password is required.")
         validate_password(password_string=value)

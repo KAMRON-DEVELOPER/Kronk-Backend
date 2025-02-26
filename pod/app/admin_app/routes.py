@@ -1,3 +1,5 @@
+from typing import Optional
+
 from app.settings.my_minio import minio_ready
 from app.settings.my_redis import CacheManager, my_redis, redis_om_ready
 from app.utility.my_logger import my_logger
@@ -32,25 +34,48 @@ async def tortoise_ready() -> bool:
 
 class ConnectionManager:
     def __init__(self):
-        self.active_connections: list[WebSocket] = []
+        self.ghost_connections: list[WebSocket] = []
+        self.active_connections: dict[str, WebSocket] = {}
 
-    async def connect(self, websocket: WebSocket):
+    async def connect(self, websocket: WebSocket, user_id: Optional[str] = None):
         await websocket.accept()
-        self.active_connections.append(websocket)
+        if user_id is not None:
+            self.active_connections[user_id] = websocket
+            my_logger.info(f"User {user_id} connected")
+        else:
+            self.ghost_connections.append(websocket)
+            my_logger.info("👻 Anonymous (ghost) client connected")
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    def disconnect(self, websocket: Optional[WebSocket] = None, user_id: Optional[str] = None):
+        try:
+            if user_id is not None:
+                self.active_connections.pop(user_id, None)
+                my_logger.info(f"❌ User {user_id} disconnected")
+            elif websocket is not None:
+                self.ghost_connections.remove(websocket)
+                my_logger.info("❌ Anonymous (ghost) client disconnected")
+        except Exception as e:
+            my_logger.error(f"🚨 Exception while disconnecting: {e}")
 
-    async def send_personal_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
+    async def send_personal_message(self, user_id: str, data: dict):
+        ws: Optional[WebSocket] = self.active_connections.get(user_id)
+        if ws:
+            try:
+                await ws.send_json(data=data)
+            except Exception as e:
+                my_logger.error(f"Exception while sending personal message: {e}")
 
-    async def broadcast(self, data: dict):
-        for connection in self.active_connections:
-            await connection.send_json(data=data)
+    async def broadcast(self, data: dict, user_ids: Optional[list[str]] = None):
+        if user_ids is not None:
+            for user_id in user_ids:
+                if user_id in self.active_connections:
+                    await self.send_personal_message(user_id, data)
+        else:
+            for ghost in self.ghost_connections:
+                await ghost.send_json(data)
 
 
 admin_connection_manager = ConnectionManager()
-
 
 metrics_connection_manager = ConnectionManager()
 
@@ -69,4 +94,4 @@ async def settings_metrics(websocket: WebSocket):
             my_logger.info(f"📨 received_text in settings_metrics data: {data}")
     except WebSocketDisconnect:
         my_logger.info("👋 websocket connection is closing...")
-        metrics_connection_manager.disconnect(websocket)
+        metrics_connection_manager.disconnect(websocket=websocket)

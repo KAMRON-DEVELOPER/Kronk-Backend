@@ -1,5 +1,6 @@
 from typing import Optional
 
+from app.admin_app.routes import ConnectionManager
 from app.community_app.models import PostModel, ReactionEnum
 from app.community_app.schemas import PostCreateScheme, PostUpdateSchema
 from app.settings.my_dependency import jwtAccessDependency
@@ -7,6 +8,7 @@ from app.settings.my_redis import CacheManager, my_redis
 from app.utility.my_logger import my_logger
 from fastapi import APIRouter, HTTPException, status
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
+from fastapi import WebSocket, WebSocketDisconnect
 
 community_router = APIRouter()
 
@@ -14,21 +16,29 @@ PostPydantic = pydantic_model_creator(cls=PostModel)
 
 cache_manager = CacheManager(redis=my_redis)
 
+feed_connection_manager = ConnectionManager()
+
 
 @community_router.post(path="/posts", status_code=status.HTTP_201_CREATED)
-async def create_post(post_create_schema: PostCreateScheme, credentials: jwtAccessDependency):
+async def create_post(post_create_schema: PostCreateScheme, jwt_access_dependency: jwtAccessDependency):
     try:
+        user_id = jwt_access_dependency.subject["id"]
         await post_create_schema.model_async_validate()
 
         new_post = await PostModel.create(
-            author=credentials.subject["id"],
+            author=user_id,
             body=post_create_schema.body,
             scheduled_time=post_create_schema.scheduled_time,
             images=post_create_schema.images,
             videos=post_create_schema.video,
         )
 
-        await cache_manager.create_post(user_id=credentials["id"], new_post=new_post)
+        await cache_manager.create_post(user_id=user_id, new_post=new_post)
+
+        user_avatar_url: Optional[str] = (await cache_manager.get_user_profile(user_id=user_id)).get("avatar")
+        if user_avatar_url is not None:
+            followers: set[str] = await cache_manager.get_followers(user_id=user_id)
+            await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
 
         return await generate_post_response(db_post=new_post)
     except Exception as e:
@@ -142,10 +152,10 @@ async def delete_post_route(post_id: str, credentials: jwtAccessDependency):
 async def user_timeline(jwt_access_dependency: jwtAccessDependency, start: int = 0, end: int = 19):
     try:
         user_timeline_posts: list[dict] = await cache_manager.get_user_timeline(user_id=jwt_access_dependency.subject["id"], start=start, end=end)
-        
+
         if not user_timeline_posts:
             return []
-        
+
         return user_timeline_posts
     except ValueError as e:
         my_logger.debug(f"ValueError in create_post_route: {e}")
@@ -166,3 +176,19 @@ async def generate_post_response(db_post: PostModel):
     # print(f"🚧 post_dict: {post_dict}")
 
     return {**post_dict, "comments_count": comments_count, "likes_count": likes_count, "dislikes_count": dislikes_count, "views_count": views_count}
+
+
+# ************************************************** WS **************************************************
+
+
+@community_router.websocket('/ws/new_post_notify')
+async def new_post_notify(websocket: WebSocket, jwt_access_dependency: jwtAccessDependency):
+    user_id = jwt_access_dependency.subject["id"]
+    await feed_connection_manager.connect(websocket=websocket, user_id=user_id)
+
+    try:
+        while True:
+            data = await websocket.receive_text()
+            my_logger.info(f"📨 received_text in new_post_notify data: {data}")
+    except WebSocketDisconnect:
+        feed_connection_manager.disconnect(user_id=user_id)

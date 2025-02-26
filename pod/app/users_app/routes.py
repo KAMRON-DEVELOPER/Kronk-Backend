@@ -13,7 +13,7 @@ from app.utility.my_logger import my_logger
 from app.utility.utility import generate_avatar_url, generate_password_string, generate_unique_username
 from app.utility.validators import allowed_image_extension, get_file_extension, validate_password
 from bcrypt import checkpw, gensalt, hashpw
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, status
 from firebase_admin.auth import UserRecord
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
