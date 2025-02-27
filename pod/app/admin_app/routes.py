@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional
 
 from app.settings.my_minio import minio_ready
@@ -69,7 +70,7 @@ class ConnectionManager:
         if user_ids is not None:
             for user_id in user_ids:
                 if user_id in self.active_connections:
-                    await self.send_personal_message(user_id, data)
+                    asyncio.create_task(self.send_personal_message(user_id, data))
         else:
             for ghost in self.ghost_connections:
                 await ghost.send_json(data)
@@ -90,7 +91,8 @@ async def settings_metrics(websocket: WebSocket):
 
     try:
         while True:
-            data = await websocket.receive_text()
+            await asyncio.sleep(1)
+            data = await websocket.receive_json()
             my_logger.info(f"📨 received_text in settings_metrics data: {data}")
     except WebSocketDisconnect:
         my_logger.info("👋 websocket connection is closing...")

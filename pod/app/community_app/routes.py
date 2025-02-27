@@ -1,14 +1,15 @@
-from typing import Optional, Annotated
+import asyncio
+from typing import Optional
 
 from app.admin_app.routes import ConnectionManager
 from app.community_app.models import PostModel, ReactionEnum
 from app.community_app.schemas import PostCreateScheme, PostUpdateSchema
 from app.settings.my_dependency import jwtAccessDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
+from app.utility.jwt_utils import verify_jwt_token
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, HTTPException, status, WebSocketException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
-from fastapi import WebSocket, WebSocketDisconnect, Query, Header
 
 community_router = APIRouter()
 
@@ -35,7 +36,7 @@ async def create_post(post_create_schema: PostCreateScheme, jwt_access_dependenc
 
         await cache_manager.create_post(user_id=user_id, new_post=new_post)
 
-        user_avatar_url: Optional[str] = (await cache_manager.get_user_profile(user_id=user_id)).get("avatar")
+        user_avatar_url = await cache_manager.get_user_avatar_url(user_id=user_id) or "/defaults/default-avatar.jpg"
         if user_avatar_url is not None:
             followers: set[str] = await cache_manager.get_followers(user_id=user_id)
             await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
@@ -180,28 +181,37 @@ async def generate_post_response(db_post: PostModel):
 
 # ************************************************** WS **************************************************
 
-
-async def get_token(websocket: WebSocket, token: Annotated[str | None, Query()] = None):
-    if token is None:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    return token
-
-
-async def get_header_token(websocket: WebSocket, authorization: Annotated[str | None, Header()] = None):
-    if authorization is None:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    return authorization
+# async def get_header_token(websocket: WebSocket, authorization: Annotated[str | None, Header()] = None):
+#     if authorization is None:
+#         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+#     return authorization
 
 
-@community_router.websocket('/ws/new_post_notify')
-async def new_post_notify(user_ws: websocketDependency):
-    user_id: str = user_ws.user_id
-    websocket: WebSocket = user_ws.websocket
+@community_router.websocket("/ws/new_post_notify")
+async def new_post_notify(websocket_dependency: websocketDependency):
+    user_id: str = websocket_dependency.user_id
+    websocket: WebSocket = websocket_dependency.websocket
+
     await feed_connection_manager.connect(websocket=websocket, user_id=user_id)
 
     try:
         while True:
-            data = await websocket.receive_text()
+            await asyncio.sleep(1)
+            data: dict = await websocket.receive_json()
             my_logger.info(f"📨 received_text in new_post_notify data: {data}")
+
+            # Handle token refresh
+            if data.get("type") == "auth" and "access_token" in data:
+                new_token: str = data.get("access_token", "")
+                jwt_credential = verify_jwt_token(new_token)
+
+                if jwt_credential is not None:
+                    continue
+                else:
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+
+            else:
+                print(f"Received message from {user_id}: {data}")
+
     except WebSocketDisconnect:
         feed_connection_manager.disconnect(user_id=user_id)

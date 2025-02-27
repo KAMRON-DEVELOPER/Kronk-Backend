@@ -224,19 +224,16 @@ class CacheManager:
             return {}
         return await self.get_user_profile(user_id=user_id)
 
+    async def get_user_avatar_url(self, user_id: str) -> Optional[str]:
+        return await self.redis.hget(f"{self.user_profile_prefix}{user_id}", key="avatar")
+
     async def delete_user_profile(self, user_id: str, username: str, email: str):
         """Delete a user profile and associated data."""
 
         async with my_redis.pipeline() as pipe:
 
-        # Delete user profile and all related keys
-            pipe.delete(
-                f"{self.home_timeline_prefix}{user_id}",
-                f"{self.user_timeline_prefix}{user_id}",
-                f"{self.user_profile_prefix}{user_id}",
-                f"{self.followers_prefix}{user_id}",
-                f"{self.following_prefix}{user_id}"
-            )
+            # Delete user profile and all related keys
+            pipe.delete(f"{self.home_timeline_prefix}{user_id}", f"{self.user_timeline_prefix}{user_id}", f"{self.user_profile_prefix}{user_id}", f"{self.followers_prefix}{user_id}", f"{self.following_prefix}{user_id}")
             pipe.srem("profiles", user_id)
             pipe.hdel("usernames", username)
             pipe.hdel("emails", email)
@@ -244,15 +241,15 @@ class CacheManager:
             await pipe.execute()
 
         post_ids: list[str] = await self.redis.lrange(name=f"{self.user_timeline_prefix}{user_id}", start=0, end=-1)
-        my_logger.info(f'post_ids: {post_ids}')
+        my_logger.info(f"post_ids: {post_ids}")
         for post_id in post_ids:
             await self.delete_post(post_id, user_id)
-            
+
         # Remove follow relationships
         followers: set[str] = await self.get_followers(user_id)
         following: set[str] = await self.get_following(user_id)
-        
-        my_logger.info(f'followers: {followers}, following: {following}')
+
+        my_logger.info(f"followers: {followers}, following: {following}")
 
         for follower_id in followers:
             pipe.srem(f"{self.following_prefix}{follower_id}", user_id)

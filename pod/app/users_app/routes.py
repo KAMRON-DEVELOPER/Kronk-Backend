@@ -9,6 +9,7 @@ from app.settings.my_minio import put_object_to_minio, remove_object_from_minio,
 from app.settings.my_redis import CacheManager, my_redis
 from app.users_app.models import UserModel
 from app.users_app.schemas import LoginSchema, RegisterSchema, RequestResetPasswordSchema, ResetPasswordSchema, UpdateSchema, VerifySchema
+from app.utility.jwt_utils import create_jwt_token
 from app.utility.my_logger import my_logger
 from app.utility.utility import generate_avatar_url, generate_password_string, generate_unique_username
 from app.utility.validators import allowed_image_extension, get_file_extension, validate_password
@@ -16,7 +17,6 @@ from bcrypt import checkpw, gensalt, hashpw
 from fastapi import APIRouter, HTTPException, status
 from firebase_admin.auth import UserRecord
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
-from app.utility.jwt_utils import create_access_token, create_refresh_token
 
 users_router = APIRouter()
 
@@ -68,8 +68,7 @@ async def register(register_schema: RegisterSchema, header_token_dependency: hea
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e} ")
     except Exception as e:
         print(f"Exception in register_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
 
 
 @users_router.post(path="/verify", status_code=status.HTTP_200_OK)
@@ -104,8 +103,7 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in verify_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
 
 
 @users_router.post(path="/login", status_code=status.HTTP_200_OK)
@@ -120,7 +118,7 @@ async def login_user(login_schema: LoginSchema):
             if not checkpw(login_schema.password.encode(), f"{user_data.get("password")}".encode()):
                 raise ValueError("password is not match.")
 
-            return user_data
+            return generate_token_response(user_id=user_data.get("id", ""))
 
         db_user: Optional[UserModel] = await UserModel.get_or_none(username=login_schema.username)
         if not db_user:
@@ -137,8 +135,7 @@ async def login_user(login_schema: LoginSchema):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/logout", status_code=status.HTTP_200_OK)
@@ -155,8 +152,7 @@ async def logout(jwt_access_dependency: jwtAccessDependency):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/request-reset-password", status_code=status.HTTP_200_OK)
@@ -182,8 +178,7 @@ async def request_reset_password(request_reset_password_schema: RequestResetPass
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in request_reset_password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
 
 
 @users_router.post(path="/reset-password", status_code=status.HTTP_200_OK)
@@ -233,8 +228,8 @@ async def reset_password(reset_password_schema: ResetPasswordSchema, header_toke
 async def refresh(jwt_refresh_dependency: jwtRefreshDependency):
     try:
         subject = {"id": jwt_refresh_dependency.user_id}
-        access_token = create_access_token(subject=subject)
-        refresh_token = create_refresh_token(subject=subject)
+        access_token = create_jwt_token(subject=subject)
+        refresh_token = create_jwt_token(subject=subject, for_refresh=True)
 
         return {"access_token": access_token, "refresh_token": refresh_token}
     except Exception as e:
@@ -283,6 +278,7 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 
 @users_router.get(path="/profile", status_code=status.HTTP_200_OK)
 async def get_user(jwt_access_dependency: jwtAccessDependency):
+    return {}
     try:
         user_data: dict = await cache_manager.get_user_profile(user_id=jwt_access_dependency.user_id)
         if user_data:
@@ -432,8 +428,8 @@ async def delete_users():
 def generate_token_response(user_id: str):
     subject = {"id": user_id}
     return {
-        "access_token": create_access_token(subject=subject),
-        "refresh_token": create_refresh_token(subject=subject),
+        "access_token": create_jwt_token(subject=subject),
+        "refresh_token": create_jwt_token(subject=subject, for_refresh=True),
     }
 
 

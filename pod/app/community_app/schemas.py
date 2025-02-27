@@ -4,15 +4,14 @@ from io import BytesIO
 from typing import Optional
 
 import aiofiles
-from dateutil.parser import parse
-from fastapi import UploadFile
-from pydantic import BaseModel
-from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
-
 from app.settings.my_config import get_settings
 from app.settings.my_minio import put_object_to_minio
 from app.utility.decorator import create_as_form
 from app.utility.validators import allowed_image_extension, allowed_video_extension, get_file_extension, get_video_duration
+from dateutil.parser import parse
+from fastapi import UploadFile
+from pydantic import BaseModel
+from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
 
 
 class PostCreateScheme(AsyncValidationModelMixin, BaseModel):

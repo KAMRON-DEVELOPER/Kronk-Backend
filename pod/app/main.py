@@ -5,13 +5,12 @@ from app.community_app.routes import community_router
 from app.education_app.routes import education_router
 from app.my_taskiq.my_taskiq import broker
 from app.settings.my_config import get_settings
+from app.users_app.models import UserModel
 from app.users_app.routes import users_router
 from faker import Faker
 from fastapi import FastAPI
 from firebase_admin import initialize_app
 from tortoise.contrib.fastapi import register_tortoise
-
-from app.users_app.models import UserModel
 
 settings = get_settings()
 

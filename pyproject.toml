@@ -16,6 +16,7 @@ dependencies = [
     "miniopy-async",
     "modern-colorthief",
     "opencv-python",
+    "passlib>=1.7.4",
     "pillow",
     "pydantic-async-validation",
     "pydantic-settings",

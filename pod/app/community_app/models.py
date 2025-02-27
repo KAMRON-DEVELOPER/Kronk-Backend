@@ -1,8 +1,7 @@
 from enum import Enum
 
-from tortoise import fields
-
 from app.users_app.models import BaseModel, UserModel
+from tortoise import fields
 
 
 class ReactionEnum(str, Enum):
