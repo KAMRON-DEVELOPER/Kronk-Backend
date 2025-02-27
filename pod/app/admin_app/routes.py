@@ -42,19 +42,19 @@ class ConnectionManager:
         await websocket.accept()
         if user_id is not None:
             self.active_connections[user_id] = websocket
-            my_logger.info(f"User {user_id} connected")
+            my_logger.debug(f"User {user_id} connected")
         else:
             self.ghost_connections.append(websocket)
-            my_logger.info("👻 Anonymous (ghost) client connected")
+            my_logger.debug("👻 Anonymous (ghost) client connected")
 
     def disconnect(self, websocket: Optional[WebSocket] = None, user_id: Optional[str] = None):
         try:
             if user_id is not None:
                 self.active_connections.pop(user_id, None)
-                my_logger.info(f"❌ User {user_id} disconnected")
+                my_logger.debug(f"User {user_id} disconnected")
             elif websocket is not None:
                 self.ghost_connections.remove(websocket)
-                my_logger.info("❌ Anonymous (ghost) client disconnected")
+                my_logger.debug("Anonymous (ghost) client disconnected")
         except Exception as e:
             my_logger.error(f"🚨 Exception while disconnecting: {e}")
 
@@ -67,6 +67,7 @@ class ConnectionManager:
                 my_logger.error(f"Exception while sending personal message: {e}")
 
     async def broadcast(self, data: dict, user_ids: Optional[list[str]] = None):
+        my_logger.debug(f"self.active_connections: {self.active_connections}; data: {data}; user_ids: {user_ids}")
         if user_ids is not None:
             for user_id in user_ids:
                 if user_id in self.active_connections:

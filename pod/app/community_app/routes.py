@@ -4,7 +4,7 @@ from typing import Optional
 from app.admin_app.routes import ConnectionManager
 from app.community_app.models import PostModel, ReactionEnum
 from app.community_app.schemas import PostCreateScheme, PostUpdateSchema
-from app.settings.my_dependency import jwtAccessDependency, websocketDependency
+from app.settings.my_dependency import jwtDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
 from app.utility.jwt_utils import verify_jwt_token
 from app.utility.my_logger import my_logger
@@ -21,9 +21,9 @@ feed_connection_manager = ConnectionManager()
 
 
 @community_router.post(path="/posts", status_code=status.HTTP_201_CREATED)
-async def create_post(post_create_schema: PostCreateScheme, jwt_access_dependency: jwtAccessDependency):
+async def create_post(post_create_schema: PostCreateScheme, jwt_dependency: jwtDependency):
     try:
-        user_id = jwt_access_dependency.subject["id"]
+        user_id = jwt_dependency.user_id
         await post_create_schema.model_async_validate()
 
         new_post = await PostModel.create(
@@ -48,16 +48,16 @@ async def create_post(post_create_schema: PostCreateScheme, jwt_access_dependenc
 
 
 @community_router.get(path="/posts/home_timeline", status_code=status.HTTP_200_OK)
-async def get_home_timeline(jwt_access_dependency: jwtAccessDependency, start: int = 0, end: int = 19):
+async def get_home_timeline(jwt_dependency: jwtDependency, start: int = 0, end: int = 19):
     try:
-        return await cache_manager.get_home_timeline(user_id=jwt_access_dependency.subject["id"], start=start, end=end)
+        return await cache_manager.get_home_timeline(user_id=jwt_dependency.user_id, start=start, end=end)
     except Exception as e:
         print(f"Exception in get_home_timeline_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in get_home_timeline_route: {e}")
 
 
 @community_router.get(path="/posts/global_timeline", status_code=status.HTTP_200_OK)
-async def get_global_timeline_route(_: jwtAccessDependency, start: int = 0, end: int = 19):
+async def get_global_timeline_route(_: jwtDependency, start: int = 0, end: int = 19):
     try:
         return await cache_manager.get_global_timeline(start=start, end=end)
     except ValueError as e:
@@ -69,7 +69,7 @@ async def get_global_timeline_route(_: jwtAccessDependency, start: int = 0, end:
 
 
 @community_router.post(path="/posts/{post_id}/view", status_code=status.HTTP_200_OK)
-async def track_post_view_route(post_id: str, credentials: jwtAccessDependency):
+async def track_post_view_route(post_id: str, credentials: jwtDependency):
     try:
         await cache_manager.mark_post_as_viewed(user_id=credentials["id"], post_id=post_id)
         return {"status": "post view tracked"}
@@ -79,7 +79,7 @@ async def track_post_view_route(post_id: str, credentials: jwtAccessDependency):
 
 
 @community_router.post(path="/posts/{post_id}/reaction", status_code=status.HTTP_200_OK)
-async def track_post_reaction_route(post_id: str, reaction: ReactionEnum, credentials: jwtAccessDependency):
+async def track_post_reaction_route(post_id: str, reaction: ReactionEnum, credentials: jwtDependency):
     try:
         await cache_manager.track_user_reaction_to_post(user_id=credentials["id"], post_id=post_id, reaction=reaction)
         return {"status": "post reaction tracked"}
@@ -89,7 +89,7 @@ async def track_post_reaction_route(post_id: str, reaction: ReactionEnum, creden
 
 
 @community_router.post(path="/comments/{comment_id}/reaction", status_code=status.HTTP_200_OK)
-async def track_post_comment_view_route(comment_id: str, credentials: jwtAccessDependency):
+async def track_post_comment_view_route(comment_id: str, credentials: jwtDependency):
     try:
         await cache_manager.mark_comment_as_viewed(user_id=credentials["id"], comment_id=comment_id)
         return {"status": "comment view tracked"}
@@ -99,7 +99,7 @@ async def track_post_comment_view_route(comment_id: str, credentials: jwtAccessD
 
 
 @community_router.post(path="/comments{comment_id}/reaction", status_code=status.HTTP_200_OK)
-async def track_post_comment_reaction_route(comment_id: str, reaction: ReactionEnum, credentials: jwtAccessDependency):
+async def track_post_comment_reaction_route(comment_id: str, reaction: ReactionEnum, credentials: jwtDependency):
     try:
         await cache_manager.track_user_reaction_to_comment(user_id=credentials["id"], comment_id=comment_id, reaction=reaction)
         return {"status": "comment reaction tracked"}
@@ -109,7 +109,7 @@ async def track_post_comment_reaction_route(comment_id: str, reaction: ReactionE
 
 
 @community_router.patch(path="/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def update_post_route(post_id: str, post_update_data: PostUpdateSchema, credentials: jwtAccessDependency):
+async def update_post_route(post_id: str, post_update_data: PostUpdateSchema, credentials: jwtDependency):
     try:
         post: Optional[PostModel] = await PostModel.get_or_none(id=post_id)
 
@@ -130,7 +130,7 @@ async def update_post_route(post_id: str, post_update_data: PostUpdateSchema, cr
 
 
 @community_router.delete(path="/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_post_route(post_id: str, credentials: jwtAccessDependency):
+async def delete_post_route(post_id: str, credentials: jwtDependency):
     try:
         post: Optional[PostModel] = await PostModel.get_or_none(id=post_id, author=credentials["id"])
 
@@ -150,9 +150,9 @@ async def delete_post_route(post_id: str, credentials: jwtAccessDependency):
 
 
 @community_router.get(path="/posts/user_timeline", status_code=status.HTTP_200_OK)
-async def user_timeline(jwt_access_dependency: jwtAccessDependency, start: int = 0, end: int = 19):
+async def user_timeline(jwt_dependency: jwtDependency, start: int = 0, end: int = 19):
     try:
-        user_timeline_posts: list[dict] = await cache_manager.get_user_timeline(user_id=jwt_access_dependency.subject["id"], start=start, end=end)
+        user_timeline_posts: list[dict] = await cache_manager.get_user_timeline(user_id=jwt_dependency.user_id, start=start, end=end)
 
         if not user_timeline_posts:
             return []
@@ -198,7 +198,7 @@ async def new_post_notify(websocket_dependency: websocketDependency):
         while True:
             await asyncio.sleep(1)
             data: dict = await websocket.receive_json()
-            my_logger.info(f"📨 received_text in new_post_notify data: {data}")
+            my_logger.debug(f"📨 received_text in new_post_notify data: {data}")
 
             # Handle token refresh
             if data.get("type") == "auth" and "access_token" in data:
