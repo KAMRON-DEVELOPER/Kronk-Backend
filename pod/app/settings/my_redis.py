@@ -33,7 +33,7 @@ class CacheManager:
         self.post_timestamp_key = "post_timestamp"
         self.post_meta_prefix = "post_meta:"
         self.followers_prefix = "followers:"
-        self.following_prefix = "following:"
+        self.followings_prefix = "followings:"
         self.user_profile_prefix = "user_profile:"
         self.user_event_prefix = "user_event:"
         self.register_prefix = "register:"
@@ -143,15 +143,29 @@ class CacheManager:
     ## ---------------------------------------- POSTS MANAGEMENT ----------------------------------------
 
     async def create_post(self, user_id: str, new_post: PostModel):
-        post_mapping = {"id": new_post.id, "author": user_id, "body": new_post.body, "images": new_post.images or "", "video": new_post.video or ""}
-        await self.redis.hset(name=f"{self.post_meta_prefix}{new_post.id}", mapping={k: v for k, v in post_mapping.items() if v})
+        try:
+            post_mapping = {
+                "id": new_post.id,
+                "created_at": new_post.created_at,
+                "updated_at": new_post.updated_at,
+                "author": user_id,
+                "body": new_post.body,
+                "scheduled_time": new_post.scheduled_time,
+                "images": new_post.images,
+                "video": new_post.video,
+            }
 
-        # Add to global timeline
-        await self._add_post_to_gt(post_id=str(new_post.id))
+            await self.redis.hset(name=f"{self.post_meta_prefix}{new_post.id}", mapping={k: v for k, v in post_mapping.items() if v})
 
-        followers = await self.get_followers(user_id=user_id)
-        for follower_id in followers:
-            await self.add_post_to_ht(user_id=follower_id, post_id=str(new_post.id))
+            # Add to global timeline
+            await self._add_post_to_gt(post_id=str(new_post.id.hex))
+
+            followers = await self.get_followers(user_id=user_id)
+            for follower_id in followers:
+                await self.add_post_to_ht(user_id=follower_id, post_id=str(new_post.id.hex))
+        except Exception as e:
+            my_logger.error(f"Exceptions while creating post: {e}")
+            raise ValueError(f"Exceptions while creating post: {e}")
 
     async def delete_post(self, post_id: str, user_id: str):
         """Completely remove post related things from all places."""
@@ -172,25 +186,38 @@ class CacheManager:
         await pipe.execute()
 
     ## ---------------------------------------- FOLLOWERS & FOLLOWINGS MANAGEMENT ----------------------------------------
+
     async def add_follower(self, user_id: str, follower_id: str):
-        """Add a follower relationship (follower_id follows user_id)."""
-        await self.redis.sadd(f"{self.followers_prefix}{user_id}", follower_id)
-        await self.redis.sadd(f"{self.following_prefix}{follower_id}", user_id)
+        """Add a follower or multiple followers to the user."""
+        async with self.redis.pipeline() as pipe:
+            pipe.sadd(f"{self.followers_prefix}{follower_id}", user_id)
+            pipe.sadd(f"{self.followings_prefix}{user_id}", follower_id)
+            await pipe.execute()
 
     async def remove_follower(self, user_id: str, follower_id: str):
         """Remove a follower relationship."""
-        await self.redis.srem(f"{self.followers_prefix}{user_id}", follower_id)
-        await self.redis.srem(f"{self.following_prefix}{follower_id}", user_id)
+        async with self.redis.pipeline() as pipe:
+            await self.redis.srem(f"{self.followings_prefix}{user_id}", follower_id)
+            await self.redis.srem(f"{self.followers_prefix}{follower_id}", user_id)
+            await pipe.execute()
 
     async def get_followers(self, user_id: str) -> set[str]:
         """Get all followers of a user."""
         return await self.redis.smembers(f"{self.followers_prefix}{user_id}")
 
     async def get_following(self, user_id: str) -> set[str]:
-        """Get all users that a user follows."""
-        return await self.redis.smembers(f"{self.following_prefix}{user_id}")
+        """Get all users that a user is following."""
+        return await self.redis.smembers(f"{self.followings_prefix}{user_id}")
+
+    async def is_following(self, user_id: str, follower_id: str) -> bool:
+        """Check if a user is following another user."""
+        return await self.redis.sismember(name=f"{self.followings_prefix}{user_id}", value=follower_id)
 
     ## ---------------------------------------- USER PROFILE MANAGEMENT ----------------------------------------
+
+    async def update_user_profile(self, data: dict):
+        pass
+
     async def create_user_profile(self, new_user: UserModel):
         try:
             """Create user profile storing only non-empty fields"""
@@ -218,7 +245,7 @@ class CacheManager:
 
     async def get_user_profile(self, user_id: str) -> dict:
         """Retrieve user profile details."""
-        profile_dict = await self.redis.hgetall(f"{self.user_profile_prefix}{user_id}")
+        profile_dict: dict = await self.redis.hgetall(f"{self.user_profile_prefix}{user_id}")
         return {k: v for k, v in profile_dict.items()} if profile_dict else {}
 
     async def get_user_profile_by_username(self, username: str) -> dict:
@@ -237,7 +264,7 @@ class CacheManager:
 
             # Delete user profile and all related keys
             pipe.delete(f"{self.home_timeline_prefix}{user_id}", f"{self.user_timeline_prefix}{user_id}", f"{self.user_profile_prefix}{user_id}",
-                        f"{self.followers_prefix}{user_id}", f"{self.following_prefix}{user_id}")
+                        f"{self.followers_prefix}{user_id}", f"{self.followings_prefix}{user_id}")
             pipe.srem("profiles", user_id)
             pipe.hdel("usernames", username)
             pipe.hdel("emails", email)
@@ -256,7 +283,7 @@ class CacheManager:
         my_logger.info(f"followers: {followers}, following: {following}")
 
         for follower_id in followers:
-            pipe.srem(f"{self.following_prefix}{follower_id}", user_id)
+            pipe.srem(f"{self.followings_prefix}{follower_id}", user_id)
 
         for followed_id in following:
             pipe.srem(f"{self.followers_prefix}{followed_id}", user_id)

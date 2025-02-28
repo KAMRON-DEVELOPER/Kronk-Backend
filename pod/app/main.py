@@ -1,5 +1,7 @@
 from contextlib import asynccontextmanager
 
+from bcrypt import gensalt, hashpw
+
 from app.admin_app.routes import admin_router
 from app.community_app.routes import community_router
 from app.education_app.routes import education_router
@@ -28,6 +30,22 @@ async def app_lifespan(_: FastAPI):
 
 app: FastAPI = FastAPI(lifespan=app_lifespan)
 
+# @app.exception_handler(RequestValidationError)
+# async def validation_exception_handler(_: Request, exc: RequestValidationError):
+#     errors = []
+#     for error in exc.errors():
+#         field = ".".join(str(loc) for loc in error["loc"])
+#         message = error["msg"]
+#         errors.append({"field": field, "message": f"{message}"})
+#
+#     return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content={"detail": errors})
+# details = exc.errors()
+# modified_details = []
+# for error in details:
+#     modified_details.append({"message": error["msg"]})
+# return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=jsonable_encoder({"detail": modified_details}))
+
+
 app.include_router(router=users_router, prefix="/users", tags=["users"])
 app.include_router(router=community_router, prefix="/community", tags=["community"])
 app.include_router(router=education_router, prefix="/education", tags=["education"])
@@ -36,6 +54,26 @@ app.include_router(router=admin_router, prefix="/admin", tags=["admin"])
 
 @app.get(path="/", tags=["root"])
 async def root() -> dict:
+    await UserModel.bulk_create([
+        UserModel(
+            username="alisher",
+            email="alisheratajanov@gmail.com",
+            password=hashpw(password="alisher2009".encode(), salt=gensalt(rounds=8)).decode(),
+            avatar="users/images/alisher.jpg"
+        ),
+        UserModel(
+            username="kumush",
+            email="kumushatajanova@gmail.com",
+            password=hashpw(password="kumush2010".encode(), salt=gensalt(rounds=8)).decode(),
+            avatar="users/images/kumush.jpg"
+        ),
+        UserModel(
+            username="ravshan",
+            email="yangiboyevravshan@gmail.com",
+            password=hashpw(password="ravshan2004".encode(), salt=gensalt(rounds=8)).decode(),
+            avatar="users/images/ravshan.jpeg"
+        )
+    ])
     return {"status": "ok"}
 
 

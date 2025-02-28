@@ -148,7 +148,7 @@ async def logout(jwt_dependency: jwtDependency):
         if not db_user:
             return {}
 
-        await cache_manager.delete_user_profile(user_id=jwt_dependency.user_id, username=db_user.username, email=db_user.email)
+        await cache_manager.delete_user_profile(user_id=jwt_dependency.user_id.hex, username=db_user.username, email=db_user.email)
         return {}
     except ValueError as e:
         print(f"ValueError in login_user: {e}")
@@ -218,6 +218,8 @@ async def reset_password(reset_password_schema: ResetPasswordSchema, header_toke
 
         db_user.password = hash_password.decode()
         await db_user.save()
+        # await cache_manager.update_user_profile(data={"password": hash_password})
+        await cache_manager.create_user_profile(new_user=db_user)
         await cache_manager.remove_reset_password_credentials(reset_password_token=header_token_dependency.reset_password_token)
 
         return generate_token_response(user_id=db_user.id.hex)
@@ -230,9 +232,9 @@ async def reset_password(reset_password_schema: ResetPasswordSchema, header_toke
 
 
 @users_router.post(path="/access", status_code=status.HTTP_200_OK)
-async def refresh_access_token(jwt_refresh_dependency: jwtDependency):
+async def refresh_access_token(jwt_dependency: jwtDependency):
     try:
-        access_token = create_jwt_token(subject={"id": jwt_refresh_dependency.user_id})
+        access_token = create_jwt_token(subject={"id": jwt_dependency.user_id.hex})
         return {"access_token": access_token}
     except Exception as e:
         print(f"Exception in refresh: {e}")
@@ -240,9 +242,9 @@ async def refresh_access_token(jwt_refresh_dependency: jwtDependency):
 
 
 @users_router.post(path="/refresh", status_code=status.HTTP_200_OK)
-async def refresh_refresh_token(jwt_refresh_dependency: jwtDependency):
+async def refresh_refresh_token(jwt_dependency: jwtDependency):
     try:
-        subject = {"id": jwt_refresh_dependency.user_id}
+        subject = {"id": jwt_dependency.user_id.hex}
         access_token = create_jwt_token(subject=subject)
         refresh_token = create_jwt_token(subject=subject, for_refresh=True)
 
@@ -294,7 +296,7 @@ async def google_auth(header_token_dependency: headerTokenDependency):
 @users_router.get(path="/profile", status_code=status.HTTP_200_OK)
 async def get_user(jwt_dependency: jwtDependency):
     try:
-        user_data: dict = await cache_manager.get_user_profile(user_id=jwt_dependency.user_id)
+        user_data: dict = await cache_manager.get_user_profile(user_id=jwt_dependency.user_id.hex)
         if user_data:
             user_data.pop("password")
             return user_data
@@ -315,11 +317,11 @@ async def get_user(jwt_dependency: jwtDependency):
 
 
 @users_router.patch(path="/profile", status_code=status.HTTP_200_OK)
-async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtDependency):
+async def update_user(update_schema: UpdateSchema, jwt_dependency: jwtDependency):
     try:
         await update_schema.model_async_validate()
 
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_dependency.user_id)
         if not db_user:
             raise ValueError("User not found.")
 
@@ -380,16 +382,16 @@ async def update_user(update_schema: UpdateSchema, jwt_access_dependency: jwtDep
 
 
 @users_router.delete(path="/profile", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(jwt_access_dependency: jwtDependency):
+async def delete_user(jwt_dependency: jwtDependency):
     try:
         # delete all media files
-        await wipe_objects_from_minio(user_id=jwt_access_dependency.user_id)
+        await wipe_objects_from_minio(user_id=jwt_dependency.user_id.hex)
 
         # delete from database
-        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_access_dependency.user_id)
+        db_user: Optional[UserModel] = await UserModel.get_or_none(id=jwt_dependency.user_id)
         if db_user:
             # delete from redis
-            await cache_manager.delete_user_profile(user_id=jwt_access_dependency.user_id, username=db_user.username, email=db_user.email)
+            await cache_manager.delete_user_profile(user_id=jwt_dependency.user_id.hex, username=db_user.username, email=db_user.email)
             await db_user.delete()
 
         return {}

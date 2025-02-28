@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from app.settings.my_config import get_settings
 from authlib.jose import JWTClaims, jwt
@@ -18,7 +19,7 @@ def create_jwt_token(subject: dict, for_refresh: bool = False) -> str:
 
 
 class JWTCredential:
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: UUID):
         self.user_id = user_id
 
 
@@ -30,9 +31,9 @@ def verify_jwt_token(token: str) -> JWTCredential:
             raise ValueError("Token is expired.")
         # my_logger.debug(f"decoded: {decoded}; decoded.keys(): {decoded.keys()}; decoded.values(): {decoded.values()}")
         try:
-            return JWTCredential(user_id=decoded["sub"]["id"])
+            return JWTCredential(user_id=UUID(decoded["sub"]["id"]))
         except KeyError as e:
-            my_logger.warning(f"KeyError in verify_jwt_token: {e}")
-            raise ValueError(f"KeyError in verify_jwt_token: {e}")
+            my_logger.warning(f"KeyError: {e}")
+            raise ValueError(f"KeyError: {e}")
     except Exception as e:
-        raise ValueError(f"Exception in verify_jwt_token: {e}")
+        raise ValueError(e)

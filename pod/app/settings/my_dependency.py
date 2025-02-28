@@ -1,4 +1,5 @@
 from typing import Annotated, Optional
+from uuid import UUID
 
 from app.utility.jwt_utils import JWTCredential, verify_jwt_token
 from fastapi import Depends, Header, HTTPException, WebSocket, WebSocketException, status
@@ -12,7 +13,7 @@ class HeaderTokensCredential:
 
 
 class WebsocketCredential:
-    def __init__(self, user_id: str, websocket: WebSocket):
+    def __init__(self, user_id: UUID, websocket: WebSocket):
         self.user_id = user_id
         self.websocket = websocket
 

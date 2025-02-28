@@ -67,7 +67,7 @@ class ConnectionManager:
                 my_logger.error(f"Exception while sending personal message: {e}")
 
     async def broadcast(self, data: dict, user_ids: Optional[list[str]] = None):
-        my_logger.debug(f"self.active_connections: {self.active_connections}; data: {data}; user_ids: {user_ids}")
+        my_logger.debug(f"broadcast self.active_connections: {self.active_connections}; data: {data}; user_ids: {user_ids}")
         if user_ids is not None:
             for user_id in user_ids:
                 if user_id in self.active_connections:

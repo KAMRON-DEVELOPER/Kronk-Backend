@@ -17,10 +17,10 @@ class FollowModel(BaseModel):
         table = "follow"
         unique_together = ("follower", "following")
 
-    def save(self, *args, **kwargs):
-        if self.follower.username == self.following.username:
-            raise ValueError("A user cannot follow themselves.")
-        return super().save(*args, **kwargs)
+    # def save(self, *args, **kwargs):
+    #     if self.follower.username == self.following.username:
+    #         raise ValueError("A user cannot follow themselves.")
+    #     return super().save(*args, **kwargs)
 
     def __str__(self):
         return "🚧 FollowModel"
