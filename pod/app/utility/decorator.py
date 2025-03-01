@@ -1,6 +1,7 @@
 import inspect
-from typing import get_origin, Union, get_args
-from fastapi import Form, File, UploadFile
+from typing import Union, get_args, get_origin
+
+from fastapi import File, Form, UploadFile
 
 
 def as_form(cls):
@@ -39,5 +40,5 @@ def as_form(cls):
     sig = inspect.signature(as_form_func)
     sig = sig.replace(parameters=new_parameters)
     as_form_func.__signature__ = sig
-    setattr(cls, 'as_form', as_form_func)
+    setattr(cls, "as_form", as_form_func)
     return cls

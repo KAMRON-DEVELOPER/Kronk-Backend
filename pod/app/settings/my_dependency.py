@@ -19,9 +19,9 @@ class WebsocketCredential:
 
 
 def token_resolver(
-        verify_token: Optional[str] = Header(default=None),
-        reset_password_token: Optional[str] = Header(default=None),
-        firebase_id_token: Optional[str] = Header(default=None),
+    verify_token: Optional[str] = Header(default=None),
+    reset_password_token: Optional[str] = Header(default=None),
+    firebase_id_token: Optional[str] = Header(default=None),
 ):
     return HeaderTokensCredential(verify_token=verify_token, reset_password_token=reset_password_token, firebase_id_token=firebase_id_token)
 

@@ -68,8 +68,7 @@ async def register(register_schema: RegisterSchema, header_token_dependency: hea
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e} ")
     except Exception as e:
         print(f"Exception in register_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while signing you up. Try again soon!")
 
 
 @users_router.post(path="/verify", status_code=status.HTTP_200_OK)
@@ -104,8 +103,7 @@ async def verify_user(verify_schema: VerifySchema, header_token_dependency: head
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in verify_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while verifying you. Try again soon!")
 
 
 @users_router.post(path="/login", status_code=status.HTTP_200_OK)
@@ -137,8 +135,7 @@ async def login_user(login_schema: LoginSchema):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/logout", status_code=status.HTTP_200_OK)
@@ -155,8 +152,7 @@ async def logout(jwt_dependency: jwtDependency):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in login_user: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while logging you in. Try again soon!")
 
 
 @users_router.post(path="/request-reset-password", status_code=status.HTTP_200_OK)
@@ -182,8 +178,7 @@ async def request_reset_password(request_reset_password_schema: RequestResetPass
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
     except Exception as e:
         print(f"Exception in request_reset_password: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                            detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="🌋 Oops! Something went wrong on our side while processing your password reset request. Try again soon!")
 
 
 @users_router.post(path="/reset-password", status_code=status.HTTP_200_OK)

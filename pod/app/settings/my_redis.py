@@ -221,8 +221,7 @@ class CacheManager:
     async def create_user_profile(self, new_user: UserModel):
         try:
             """Create user profile storing only non-empty fields"""
-            fields = ["id", "created_at", "updated_at", "first_name", "last_name", "username", "email", "password", "avatar", "banner", "banner_color",
-                      "birthdate", "bio", "country", "state_or_province"]
+            fields = ["id", "created_at", "updated_at", "first_name", "last_name", "username", "email", "password", "avatar", "banner", "banner_color", "birthdate", "bio", "country", "state_or_province"]
             user_mapping = {}
             for field in fields:
                 value = getattr(new_user, field, None)
@@ -238,8 +237,7 @@ class CacheManager:
 
             async with self.redis.pipeline() as pipe:
                 my_logger.info(f"🚧 mapping: {user_mapping}")
-                await pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping).sadd("profiles", new_user.id.hex).hset(
-                    name="usernames", mapping={new_user.username: new_user.id.hex}).hset(name="emails", mapping={new_user.email: "1"}).execute()
+                await pipe.hset(name=f"{self.user_profile_prefix}{new_user.id.hex}", mapping=user_mapping).sadd("profiles", new_user.id.hex).hset(name="usernames", mapping={new_user.username: new_user.id.hex}).hset(name="emails", mapping={new_user.email: "1"}).execute()
         except Exception as e:
             raise ValueError(f"🥶 Exception in create_user_profile: {e}")
 
@@ -263,8 +261,7 @@ class CacheManager:
         async with my_redis.pipeline() as pipe:
 
             # Delete user profile and all related keys
-            pipe.delete(f"{self.home_timeline_prefix}{user_id}", f"{self.user_timeline_prefix}{user_id}", f"{self.user_profile_prefix}{user_id}",
-                        f"{self.followers_prefix}{user_id}", f"{self.followings_prefix}{user_id}")
+            pipe.delete(f"{self.home_timeline_prefix}{user_id}", f"{self.user_timeline_prefix}{user_id}", f"{self.user_profile_prefix}{user_id}", f"{self.followers_prefix}{user_id}", f"{self.followings_prefix}{user_id}")
             pipe.srem("profiles", user_id)
             pipe.hdel("usernames", username)
             pipe.hdel("emails", email)

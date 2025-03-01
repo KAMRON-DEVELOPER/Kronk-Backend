@@ -1,18 +1,18 @@
 import os
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional, Annotated, Callable
+from typing import Annotated, Callable, Optional
 from uuid import UUID
-from app.utility.my_logger import my_logger
+
 import aiofiles
 from app.settings.my_config import get_settings
 from app.settings.my_minio import put_object_to_minio
+from app.utility.decorator import as_form
+from app.utility.my_logger import my_logger
 from app.utility.validators import allowed_image_extension, allowed_video_extension, get_file_extension, get_video_duration
+from fastapi import File, Form, UploadFile
 from pydantic import BaseModel, Field
 from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
-from fastapi import Form, File, UploadFile
-
-from app.utility.decorator import as_form
 
 
 class FollowScheme(AsyncValidationModelMixin, BaseModel):
@@ -38,13 +38,13 @@ class PostCreate:
 
 class PostCreateInit(BaseModel):
     def __init__(
-            self,
-            body: Annotated[Optional[str], Form()],
-            images: Annotated[Optional[str], Form()],
-            video: Annotated[Optional[str], Form()],
-            scheduled_time: Annotated[Optional[str], Form()],
-            image_files: Annotated[Optional[list[UploadFile]], File()],
-            video_file: Annotated[Optional[UploadFile], File()],
+        self,
+        body: Annotated[Optional[str], Form()],
+        images: Annotated[Optional[str], Form()],
+        video: Annotated[Optional[str], Form()],
+        scheduled_time: Annotated[Optional[str], Form()],
+        image_files: Annotated[Optional[list[UploadFile]], File()],
+        video_file: Annotated[Optional[UploadFile], File()],
     ):
         super().__init__(body=body, images=images, video=video, scheduled_time=scheduled_time, image_files=image_files, video_file=video_file)
 

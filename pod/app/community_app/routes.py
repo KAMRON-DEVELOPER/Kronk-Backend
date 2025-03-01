@@ -2,12 +2,12 @@ import asyncio
 from typing import Optional
 
 from app.admin_app.routes import ConnectionManager
-from app.community_app.models import PostModel, ReactionEnum, FollowModel
-from app.community_app.schemas import PostCreateScheme, PostUpdateSchema, FollowScheme
+from app.community_app.models import FollowModel, PostModel, ReactionEnum
+from app.community_app.schemas import FollowScheme, PostCreateScheme, PostUpdateSchema
 from app.settings.my_dependency import jwtDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status, Depends
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 community_router = APIRouter()
