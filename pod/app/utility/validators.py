@@ -41,13 +41,19 @@ def get_file_extension(file: UploadFile) -> str:
     return ""
 
 
-async def get_video_duration(file_path: str):
+async def get_video_duration(file_path: str) -> float:
     try:
         video = cv2.VideoCapture(file_path)
+        if not video.isOpened():
+            raise ValueError(f"Could not open video file: {file_path}")
 
         fps = video.get(cv2.CAP_PROP_FPS)
         total_frame_count = video.get(cv2.CAP_PROP_FRAME_COUNT)
 
-        return total_frame_count / fps
+        if fps <= 0 or total_frame_count <= 0:
+            raise ValueError(f"Invalid video properties: fps={fps}, frame_count={total_frame_count}")
+
+        duration = total_frame_count / fps
+        return duration
     except Exception as e:
-        raise ValueError(f"Couldn't get video duration. {e}")
+        raise ValueError(f"Could not get video duration: {e}")

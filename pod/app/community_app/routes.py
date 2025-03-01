@@ -71,13 +71,8 @@ async def get_followings(jwt_dependency: jwtDependency):
 async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCreateScheme = Depends(PostCreateScheme.as_form)):
     try:
         user_id = jwt_dependency.user_id
-
-        my_logger.debug(f"post_create_schema first image filename: {post_create_schema.image_files[0].filename}")
-        # my_logger.debug(f"post_create_schema first video filename: {post_create_schema.video_file.filename}")
-
-        return {"your user_id": user_id.hex}
-
-        # await post_create_schema.model_async_validate()
+        post_create_schema.author_id = user_id.hex
+        await post_create_schema.model_async_validate()
 
         # new_post = await PostModel.create(
         #     author_id=user_id,
@@ -107,7 +102,7 @@ async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCre
         #
         # return await generate_post_response_from_db_model(db_post=new_post)
     except Exception as e:
-        print(f"Exception in create_post_route: {e}")
+        my_logger.critical(f"Exception in create_post_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in create_post_route: {e}")
 
 

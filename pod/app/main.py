@@ -53,13 +53,17 @@ app.include_router(router=admin_router, prefix="/admin", tags=["admin"])
 
 @app.get(path="/", tags=["root"])
 async def root() -> dict:
-    await UserModel.bulk_create(
-        [
-            UserModel(username="alisher", email="alisheratajanov@gmail.com", password=hashpw(password="alisher2009".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/alisher.jpg"),
-            UserModel(username="kumush", email="kumushatajanova@gmail.com", password=hashpw(password="kumush2010".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/kumush.jpg"),
-            UserModel(username="ravshan", email="yangiboyevravshan@gmail.com", password=hashpw(password="ravshan2004".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/ravshan.jpeg"),
-        ]
-    )
+    if "some" == "not some":
+        await UserModel.bulk_create(
+            [
+                UserModel(username="alisher", email="alisheratajanov@gmail.com",
+                          password=hashpw(password="alisher2009".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/alisher.jpg"),
+                UserModel(username="kumush", email="kumushatajanova@gmail.com",
+                          password=hashpw(password="kumush2010".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/kumush.jpg"),
+                UserModel(username="ravshan", email="yangiboyevravshan@gmail.com",
+                          password=hashpw(password="ravshan2004".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/ravshan.jpeg"),
+            ]
+        )
     return {"status": "ok"}
 
 
