@@ -73,7 +73,7 @@ async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCre
         user_id = jwt_dependency.user_id
 
         my_logger.debug(f"post_create_schema first image filename: {post_create_schema.image_files[0].filename}")
-        my_logger.debug(f"post_create_schema first video filename: {post_create_schema.video_file.filename}")
+        # my_logger.debug(f"post_create_schema first video filename: {post_create_schema.video_file.filename}")
 
         return {"your user_id": user_id.hex}
 

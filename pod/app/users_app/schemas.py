@@ -1,8 +1,7 @@
 import re
 from datetime import datetime, timedelta
-from typing import Optional
-
-from app.utility.decorator import create_as_form
+from typing import Optional, Callable
+from app.utility.decorator import as_form
 from app.utility.validators import validate_email, validate_length, validate_password, validate_username, violent_words_regex
 from dateutil.parser import parse
 from fastapi import UploadFile
@@ -109,6 +108,7 @@ class LoginSchema(AsyncValidationModelMixin, BaseModel):
         return "<🚧 LoginModel"
 
 
+@as_form
 class UpdateSchema(AsyncValidationModelMixin, BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -124,6 +124,10 @@ class UpdateSchema(AsyncValidationModelMixin, BaseModel):
     country: Optional[str] = None
     is_admin: Optional[bool] = None
     is_blocked: Optional[bool] = None
+
+    @classmethod
+    def as_form(cls) -> Callable[..., "UpdateSchema"]:
+        pass  # This is just to help IDEs recognize `as_form` and making IDEs happy.
 
     @async_field_validator("username")
     async def validate_code(self, value: Optional[str]) -> None:
@@ -178,10 +182,6 @@ class UpdateSchema(AsyncValidationModelMixin, BaseModel):
             validate_length(field=value, min_len=0, max_len=200, field_name="bio")
             if re.search(violent_words_regex, value, re.IGNORECASE):
                 raise ValueError("Bio contains sensitive or inappropriate content.")
-
-    @classmethod
-    def as_form(cls):
-        return create_as_form(cls)
 
     def __str__(self):
         return "<🚧 UpdateModel"

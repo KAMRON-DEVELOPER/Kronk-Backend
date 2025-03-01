@@ -1,17 +1,18 @@
 import os
-from datetime import datetime
+from dataclasses import dataclass
 from io import BytesIO
-from typing import Optional
+from typing import Optional, Annotated, Callable
 from uuid import UUID
 from app.utility.my_logger import my_logger
 import aiofiles
 from app.settings.my_config import get_settings
 from app.settings.my_minio import put_object_to_minio
-from app.utility.decorator import create_as_form, as_form
 from app.utility.validators import allowed_image_extension, allowed_video_extension, get_file_extension, get_video_duration
-from fastapi import UploadFile
 from pydantic import BaseModel, Field
 from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
+from fastapi import Form, File, UploadFile
+
+from app.utility.decorator import as_form
 
 
 class FollowScheme(AsyncValidationModelMixin, BaseModel):
@@ -25,6 +26,36 @@ class FollowScheme(AsyncValidationModelMixin, BaseModel):
         my_logger.debug(f"value: {value}, type: {type(value)}")
 
 
+@dataclass
+class PostCreate:
+    body: Optional[str] = Form(...)
+    images: Optional[list[str]] = Form(...)
+    video: Optional[str] = Form(...)
+    scheduled_time: Optional[str] = Form(...)
+    image_files: Optional[list[UploadFile]] = File(...)
+    video_file: Optional[UploadFile] = File(...)
+
+
+class PostCreateInit(BaseModel):
+    def __init__(
+            self,
+            body: Annotated[Optional[str], Form()],
+            images: Annotated[Optional[str], Form()],
+            video: Annotated[Optional[str], Form()],
+            scheduled_time: Annotated[Optional[str], Form()],
+            image_files: Annotated[Optional[list[UploadFile]], File()],
+            video_file: Annotated[Optional[UploadFile], File()],
+    ):
+        super().__init__(body=body, images=images, video=video, scheduled_time=scheduled_time, image_files=image_files, video_file=video_file)
+
+    body: Annotated[Optional[str], Form()]
+    images: Annotated[Optional[str], Form()]
+    video: Annotated[Optional[str], Form()]
+    scheduled_time: Annotated[Optional[str], Form()]
+    image_files: Annotated[Optional[list[UploadFile]], File()]
+    video_file: Annotated[Optional[UploadFile], File()]
+
+
 @as_form
 class PostCreateScheme(BaseModel):
     body: Optional[str] = None
@@ -33,6 +64,10 @@ class PostCreateScheme(BaseModel):
     scheduled_time: Optional[str] = None
     image_files: Optional[list[UploadFile]] = None
     video_file: Optional[UploadFile] = None
+
+    @classmethod
+    def as_form(cls) -> Callable[..., "PostCreateScheme"]:
+        pass  # This is just to help IDEs recognize `as_form` and making IDEs happy.
 
     class Config:
         from_attributes = True
@@ -94,10 +129,6 @@ class PostCreateScheme(BaseModel):
     #
     #     os.remove(path=temp_file_path)
 
-    # @classmethod
-    # def as_form(cls):
-    #     return as_form(cls)
-
     def __str__(self) -> str:
         return "<🚧 CreatePostScheme>"
 
@@ -155,10 +186,6 @@ class PostUpdateSchema(AsyncValidationModelMixin, BaseModel):
             self.video = object_name
 
         os.remove(path=temp_file_path)
-
-    @classmethod
-    def as_form(cls):
-        return create_as_form(cls)
 
     def __str__(self):
         return "<🚧 PostUpdateSchema>"
