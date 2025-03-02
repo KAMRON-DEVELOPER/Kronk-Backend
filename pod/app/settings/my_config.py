@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     TEMP_VIDEOS_FOLDER_PATH: Optional[Path] = Path(__file__).parent.parent.parent.resolve() / "static/videos"
     DATABASE_URL: Optional[str] = None
     REDIS_URL: Optional[str] = None
+    TASKIQ_WORKER_URL: Optional[str] = None
+    TASKIQ_SCHEDULER_URL: Optional[str] = None
 
     # MINIO
     MINIO_ROOT_USER: Optional[str] = None

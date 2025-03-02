@@ -1,14 +1,16 @@
 import asyncio
 from typing import Optional
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
-from app.admin_app.routes import ConnectionManager
 from app.community_app.models import FollowModel, PostModel, ReactionEnum
 from app.community_app.schemas import FollowScheme, PostCreateScheme, PostUpdateSchema
+from app.my_taskiq.my_taskiq import send_new_post_notification_task
 from app.settings.my_dependency import jwtDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
+from app.settings.my_websocket import feed_connection_manager
 from app.utility.my_logger import my_logger
 from app.utility.validators import convert_for_redis
 
@@ -17,8 +19,6 @@ community_router = APIRouter()
 PostPydantic = pydantic_model_creator(cls=PostModel)
 
 cache_manager = CacheManager(redis=my_redis)
-
-feed_connection_manager = ConnectionManager()
 
 
 @community_router.post(path="/follow", status_code=status.HTTP_200_OK)
@@ -70,9 +70,9 @@ async def get_followings(jwt_dependency: jwtDependency):
 
 
 @community_router.post(path="/posts", status_code=status.HTTP_201_CREATED)
-async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCreateScheme = Depends(PostCreateScheme.as_form)):
+async def post_create_route(jwt_dependency: jwtDependency, post_create_schema: PostCreateScheme = Depends(PostCreateScheme.as_form)):
     try:
-        user_id = jwt_dependency.user_id
+        user_id: UUID = jwt_dependency.user_id
         post_create_schema.author_id = user_id.hex
         await post_create_schema.model_async_validate()
 
@@ -86,25 +86,19 @@ async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCre
             videos=post_create_schema.video,
         )
 
-        user_avatar_url: Optional[str] = await cache_manager.get_user_avatar_url(user_id=user_id.hex)
-        my_logger.debug(f"1 user_avatar_url: {user_avatar_url}")
-        if user_avatar_url is not None:
-            followers: set[str] = await cache_manager.get_followers(user_id=user_id.hex)
-            my_logger.debug(f"2 followers set: {followers}")
-            await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
-
         post_dict = await generate_post_response_from_db_model(db_post=new_post)
         data_dict = convert_for_redis(data=post_dict)
         await cache_manager.create_post(user_id=user_id.hex, post_id=new_post.id.hex, data_dict=data_dict)
 
-        my_logger.debug(f"new_post.video: {new_post.video}; type: {type(new_post.video)}")
-        my_logger.debug(f"new_post.images: {new_post.images}; type: {type(new_post.images)}")
-        await new_post.delete()
+        # Send notification to followers
+        await send_new_post_notification_task.kiq(user_id=user_id, for_new_post=True)
 
-        return {}
-    except Exception as e:
-        my_logger.critical(f"Exception in create_post_route: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in create_post_route: {e}")
+        return data_dict
+    except ValueError as value_error:
+        my_logger.error(f"ValueError in post_create_route: {value_error}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in post_create_route: {exception}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in create_post_route: {exception}")
 
 
 @community_router.get(path="/posts/home_timeline", status_code=status.HTTP_200_OK)
