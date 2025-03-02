@@ -1,14 +1,16 @@
 import asyncio
 from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
+
 from app.admin_app.routes import ConnectionManager
 from app.community_app.models import FollowModel, PostModel, ReactionEnum
 from app.community_app.schemas import FollowScheme, PostCreateScheme, PostUpdateSchema
 from app.settings.my_dependency import jwtDependency, websocketDependency
 from app.settings.my_redis import CacheManager, my_redis
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
-from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
+from app.utility.validators import convert_for_redis
 
 community_router = APIRouter()
 
@@ -74,33 +76,32 @@ async def create_post(jwt_dependency: jwtDependency, post_create_schema: PostCre
         post_create_schema.author_id = user_id.hex
         await post_create_schema.model_async_validate()
 
-        # new_post = await PostModel.create(
-        #     author_id=user_id,
-        #     body=post_create_schema.body,
-        #     scheduled_time=post_create_schema.scheduled_time,
-        #     images=post_create_schema.images,
-        #     videos=post_create_schema.video,
-        # )
-        #
-        # user_avatar_url: Optional[str] = await cache_manager.get_user_avatar_url(user_id=user_id.hex)
-        # my_logger.debug(f"1 user_avatar_url: {user_avatar_url}")
-        # if user_avatar_url is not None:
-        #     followers: set[str] = await cache_manager.get_followers(user_id=user_id.hex)
-        #     my_logger.debug(f"2 followers set: {followers}")
-        #     await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
-        #
-        # post_pydantic_model: PydanticModel = await PostPydantic.from_tortoise_orm(obj=new_post)
-        # post_dict_excluded_none = post_pydantic_model.model_dump(exclude_none=False)
-        # post_dict_excluded_defaults = post_pydantic_model.model_dump(exclude_defaults=True)
-        # post_dict_excluded_unset = post_pydantic_model.model_dump(exclude_unset=True)
-        #
-        # my_logger.debug(f"4.0 post_dict_excluded_none: {post_dict_excluded_none}")
-        # my_logger.debug(f"3.1 post_dict_excluded_defaults: {post_dict_excluded_defaults}")
-        # my_logger.debug(f"4.2 post_dict_excluded_unset: {post_dict_excluded_unset}")
-        #
-        # await cache_manager.create_post(user_id=user_id.hex, new_post=new_post)
-        #
-        # return await generate_post_response_from_db_model(db_post=new_post)
+        my_logger.debug(f"post_create_schema.video: {post_create_schema.video}; type: {type(post_create_schema.video)}")
+        my_logger.debug(f"post_create_schema.images: {post_create_schema.images}; type: {type(post_create_schema.images)}")
+        new_post = await PostModel.create(
+            author_id=user_id,
+            body=post_create_schema.body,
+            scheduled_time=post_create_schema.scheduled_time,
+            images=post_create_schema.images,
+            videos=post_create_schema.video,
+        )
+
+        user_avatar_url: Optional[str] = await cache_manager.get_user_avatar_url(user_id=user_id.hex)
+        my_logger.debug(f"1 user_avatar_url: {user_avatar_url}")
+        if user_avatar_url is not None:
+            followers: set[str] = await cache_manager.get_followers(user_id=user_id.hex)
+            my_logger.debug(f"2 followers set: {followers}")
+            await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
+
+        post_dict = await generate_post_response_from_db_model(db_post=new_post)
+        data_dict = convert_for_redis(data=post_dict)
+        await cache_manager.create_post(user_id=user_id.hex, post_id=new_post.id.hex, data_dict=data_dict)
+
+        my_logger.debug(f"new_post.video: {new_post.video}; type: {type(new_post.video)}")
+        my_logger.debug(f"new_post.images: {new_post.images}; type: {type(new_post.images)}")
+        await new_post.delete()
+
+        return {}
     except Exception as e:
         my_logger.critical(f"Exception in create_post_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in create_post_route: {e}")
@@ -179,7 +180,8 @@ async def update_post_route(post_id: str, post_update_data: PostUpdateSchema, jw
 
         updated_post: PostModel = await post.update_from_dict(data=post_update_data.model_dump())
 
-        await cache_manager.create_post(new_post=updated_post, user_id=jwt_dependency.user_id.hex)
+        data_dict: dict = await generate_post_response_from_db_model(db_post=updated_post)  # TODO needed fixes
+        await cache_manager.create_post(user_id=jwt_dependency.user_id.hex, post_id=updated_post.id.hex, data_dict=data_dict)
     except ValueError as e:
         print(f"ValueError in create_post_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
@@ -227,7 +229,7 @@ async def user_timeline(jwt_dependency: jwtDependency, start: int = 0, end: int 
 
 async def generate_post_response_from_db_model(db_post: PostModel):
     post_pydantic_model: PydanticModel = await PostPydantic.from_tortoise_orm(obj=db_post)
-    post_dict = post_pydantic_model.model_dump(exclude_none=False)
+    post_dict = post_pydantic_model.model_dump(exclude_none=True, exclude_defaults=True)
 
     return post_dict
 

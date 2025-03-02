@@ -2,10 +2,15 @@ from io import BytesIO
 from random import randint
 from typing import Optional
 
+from bcrypt import checkpw, gensalt, hashpw
+from fastapi import APIRouter, HTTPException, status
+from firebase_admin.auth import UserRecord
+from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
+
 from app.my_taskiq.my_taskiq import broadcast_stats_to_settings_task, send_email_task
 from app.services.firebase_service import validate_firebase_token
 from app.settings.my_dependency import headerTokenDependency, jwtDependency
-from app.settings.my_minio import put_object_to_minio, remove_object_from_minio, wipe_objects_from_minio
+from app.settings.my_minio import put_object_to_minio, remove_objects_from_minio, wipe_objects_from_minio
 from app.settings.my_redis import CacheManager, my_redis
 from app.users_app.models import UserModel
 from app.users_app.schemas import LoginSchema, RegisterSchema, RequestResetPasswordSchema, ResetPasswordSchema, UpdateSchema, VerifySchema
@@ -13,10 +18,6 @@ from app.utility.jwt_utils import create_jwt_token
 from app.utility.my_logger import my_logger
 from app.utility.utility import generate_avatar_url, generate_password_string, generate_unique_username
 from app.utility.validators import allowed_image_extension, get_file_extension, validate_password
-from bcrypt import checkpw, gensalt, hashpw
-from fastapi import APIRouter, HTTPException, status
-from firebase_admin.auth import UserRecord
-from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 users_router = APIRouter()
 
@@ -334,7 +335,11 @@ async def update_user(update_schema: UpdateSchema, jwt_dependency: jwtDependency
         if update_schema.avatar_file is not None:
             if update_schema.avatar_file.size == 0 or update_schema.avatar_file.filename == "":
                 if db_user.avatar:
-                    await remove_object_from_minio(object_name=db_user.avatar)
+                    await remove_objects_from_minio(
+                        object_names=[
+                            db_user.avatar,
+                        ]
+                    )
                     update_schema.avatar = None
             else:
                 file_extension = get_file_extension(file=update_schema.avatar_file)
@@ -348,7 +353,11 @@ async def update_user(update_schema: UpdateSchema, jwt_dependency: jwtDependency
         if update_schema.banner_file is not None:
             if update_schema.banner_file.size == 0 or update_schema.banner_file.filename == "":
                 if db_user.banner:
-                    await remove_object_from_minio(object_name=db_user.banner)
+                    await remove_objects_from_minio(
+                        object_names=[
+                            db_user.banner,
+                        ]
+                    )
                     update_schema.banner = None
             else:
                 file_extension = get_file_extension(file=update_schema.banner_file)

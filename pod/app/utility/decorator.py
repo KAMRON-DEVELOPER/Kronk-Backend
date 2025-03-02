@@ -25,14 +25,7 @@ def as_form(cls):
             else:
                 param = File(...)
 
-        new_parameters.append(
-            inspect.Parameter(
-                field_name,
-                inspect.Parameter.KEYWORD_ONLY,
-                default=param,
-                annotation=field_type,
-            )
-        )
+        new_parameters.append(inspect.Parameter(field_name, inspect.Parameter.KEYWORD_ONLY, default=param, annotation=field_type))
 
     async def as_form_func(**kwargs):
         return cls(**kwargs)

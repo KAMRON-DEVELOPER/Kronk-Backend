@@ -1,11 +1,12 @@
 import asyncio
 from typing import Optional
 
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from tortoise.exceptions import ConfigurationError
+
 from app.settings.my_minio import minio_ready
 from app.settings.my_redis import CacheManager, my_redis, redis_om_ready
 from app.utility.my_logger import my_logger
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from tortoise.exceptions import ConfigurationError
 
 admin_router = APIRouter()
 

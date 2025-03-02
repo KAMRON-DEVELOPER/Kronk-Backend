@@ -2,12 +2,13 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
-from app.utility.decorator import as_form
-from app.utility.validators import validate_email, validate_length, validate_password, validate_username, violent_words_regex
 from dateutil.parser import parse
 from fastapi import UploadFile
 from pydantic import BaseModel
 from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
+
+from app.utility.decorator import as_form
+from app.utility.validators import validate_email, validate_length, validate_password, validate_username, violent_words_regex
 
 
 class RegisterSchema(AsyncValidationModelMixin, BaseModel):

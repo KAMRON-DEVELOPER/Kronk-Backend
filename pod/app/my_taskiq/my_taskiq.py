@@ -1,16 +1,17 @@
 import asyncio
 
 import aiohttp
-from app.admin_app.routes import metrics_connection_manager
-from app.community_app.models import PostModel
-from app.settings.my_config import get_settings
-from app.settings.my_redis import CacheManager, my_redis
-from app.utility.my_logger import my_logger
 from fastapi import APIRouter
 from taskiq import TaskiqScheduler
 from taskiq.schedule_sources import LabelScheduleSource
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 from tortoise.expressions import F
+
+from app.admin_app.routes import metrics_connection_manager
+from app.community_app.models import PostModel
+from app.settings.my_config import get_settings
+from app.settings.my_redis import CacheManager, my_redis
+from app.utility.my_logger import my_logger
 
 admin_router = APIRouter()
 

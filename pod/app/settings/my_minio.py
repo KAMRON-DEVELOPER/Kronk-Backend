@@ -2,11 +2,14 @@ from io import BytesIO
 from typing import Optional
 
 import aiohttp
-from app.settings.my_config import get_settings
 from miniopy_async import Minio
+from miniopy_async.datatypes import ListObjects
 
 # from miniopy_async.datatypes import ListObjects, Object
 from miniopy_async.helpers import ObjectWriteResult
+
+from app.settings.my_config import get_settings
+from app.utility.my_logger import my_logger
 
 settings = get_settings()
 
@@ -35,18 +38,24 @@ async def put_object_to_minio(object_name: str, data_stream: BytesIO, length: in
         raise ValueError(f"Exception in put_data_to_minio: {e}")
 
 
-async def remove_object_from_minio(object_name: str) -> None:
+async def remove_objects_from_minio(object_names: list[str]) -> None:
     try:
-        await minio_client.remove_object(bucket_name=settings.MINIO_BUCKET_NAME, object_name=object_name)
+        my_logger.debug(f"remove_objects_from_minio; object_names: {object_names}")
+        for object_name in object_names:
+            await minio_client.remove_object(bucket_name=settings.MINIO_BUCKET_NAME, object_name=object_name)
     except Exception as e:
         print(f"Exception in remove_object_from_minio: {e}")
 
 
 async def wipe_objects_from_minio(user_id: str) -> None:
-    try:
-        list_objects = await minio_client.list_objects(bucket_name=settings.MINIO_BUCKET_NAME, prefix=f"users/{user_id}/", recursive=True)
-        for user_object in list_objects:
-            await remove_object_from_minio(object_name=f"{user_object.object_name}")
+    try:  # TODO there need to be checked, especially list_objects.iterator
+        list_objects: ListObjects = await minio_client.list_objects(bucket_name=settings.MINIO_BUCKET_NAME, prefix=f"users/{user_id}/", recursive=True)
+        for user_object in list_objects.iterator:
+            await remove_objects_from_minio(
+                object_names=[
+                    f"{user_object.object_name}",
+                ]
+            )
     except Exception as e:
         print(f"Exception in wipe_objects_from_minio: {e}")
         raise ValueError(f"Exception in wipe_objects_from_minio: {e}")

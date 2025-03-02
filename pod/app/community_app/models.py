@@ -1,7 +1,11 @@
 from enum import Enum
+from typing import Iterable, Optional
 
+from tortoise import BaseDBAsyncClient, fields
+
+from app.settings.my_minio import remove_objects_from_minio
 from app.users_app.models import BaseModel, UserModel
-from tortoise import fields
+from app.utility.my_logger import my_logger
 
 
 class ReactionEnum(str, Enum):
@@ -50,6 +54,35 @@ class PostModel(BaseModel):
 
     class PydanticMeta:
         allow_cycles = True
+
+    async def save(
+        self,
+        using_db: Optional[BaseDBAsyncClient] = None,
+        update_fields: Optional[Iterable[str]] = None,
+        force_create: bool = False,
+        force_update: bool = False,
+    ) -> None:
+        my_logger.debug(f"PostModel save method is working...")
+        await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
+
+    async def delete(self, using_db: Optional[BaseDBAsyncClient] = None) -> None:
+        my_logger.debug(f"PostModel delete method is working...")
+        my_logger.debug(f"PostModel delete; self.video: {self.video}")
+        my_logger.debug(f"PostModel delete; self.images: {self.images}")
+
+        if self.video:
+            my_logger.debug(f"PostModel delete method; self.video: {self.video}")
+            await remove_objects_from_minio(
+                object_names=[
+                    self.video,
+                ]
+            )
+        if self.images:
+            my_logger.debug(f"PostModel delete method; self.images: {self.images}")
+            await remove_objects_from_minio(object_names=self.images)
+        await super().delete(using_db=using_db)
+
+        my_logger.debug(f"PostModel was deleted successfully.")
 
     def __str__(self):
         return "🚧 PostModel"

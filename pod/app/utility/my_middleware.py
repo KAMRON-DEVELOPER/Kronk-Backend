@@ -1,8 +1,9 @@
 import time
 
-from app.utility.my_logger import my_logger
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.utility.my_logger import my_logger
 
 
 class RequestCountMiddleware(BaseHTTPMiddleware):

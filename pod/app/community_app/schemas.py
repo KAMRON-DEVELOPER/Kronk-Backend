@@ -1,20 +1,21 @@
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import Annotated, Callable, Optional
 from uuid import UUID
 
 import aiofiles
-from pathlib import Path
+from fastapi import File, Form, UploadFile
+from pydantic import BaseModel, Field
+from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
+
 from app.settings.my_config import get_settings
 from app.settings.my_minio import put_object_to_minio
 from app.utility.decorator import as_form
 from app.utility.my_logger import my_logger
 from app.utility.validators import allowed_image_extension, allowed_video_extension, get_file_extension, get_video_duration
-from fastapi import File, Form, UploadFile
-from pydantic import BaseModel, Field
-from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
-from dateutil.parser import parse
 
 
 class FollowScheme(AsyncValidationModelMixin, BaseModel):
@@ -40,13 +41,13 @@ class PostCreate:
 
 class PostCreateInit(BaseModel):
     def __init__(
-            self,
-            body: Annotated[Optional[str], Form()],
-            images: Annotated[Optional[str], Form()],
-            video: Annotated[Optional[str], Form()],
-            scheduled_time: Annotated[Optional[str], Form()],
-            image_files: Annotated[Optional[list[UploadFile]], File()],
-            video_file: Annotated[Optional[UploadFile], File()],
+        self,
+        body: Annotated[Optional[str], Form()],
+        images: Annotated[Optional[str], Form()],
+        video: Annotated[Optional[str], Form()],
+        scheduled_time: Annotated[Optional[str], Form()],
+        image_files: Annotated[Optional[list[UploadFile]], File()],
+        video_file: Annotated[Optional[UploadFile], File()],
     ):
         super().__init__(body=body, images=images, video=video, scheduled_time=scheduled_time, image_files=image_files, video_file=video_file)
 
@@ -64,7 +65,7 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
     body: Optional[str] = None
     images: Optional[list[str]] = None
     video: Optional[str] = None
-    scheduled_time: Optional[str] = None
+    scheduled_time: Optional[datetime] = None
     image_files: Optional[list[UploadFile]] = None
     video_file: Optional[UploadFile] = None
 
@@ -84,16 +85,16 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
             raise ValueError("body is exceeded max 200 character limit.")
 
     @async_field_validator("scheduled_time")
-    async def validate_scheduled(self, value: Optional[str]) -> None:
+    async def validate_scheduled(self, value: Optional[datetime]) -> None:
         try:
             if value is not None:
                 my_logger.debug(f"scheduled_time async_field_validator: {value}, type: {type(value)}")
-                parse(timestr=value)
         except Exception as e:
             raise ValueError(f"schedule time is invalid. {e}")
 
     @async_field_validator("image_files")
     async def validate_image(self, value: Optional[list[UploadFile]]) -> None:
+        my_logger.debug(f"async_field_validator image_files: {self.image_files}")
         if value is not None:
             my_logger.debug(f"image_files async_field_validator: {value}, type: {type(value)}")
             if len(value) > 4:
@@ -119,6 +120,7 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
 
     @async_field_validator("video_file")
     async def validate_video(self, value: Optional[UploadFile]) -> None:
+        my_logger.debug(f"async_field_validator video_file: {self.video_file}")
         if value is not None:
             try:
                 # Check if the file extension is allowed

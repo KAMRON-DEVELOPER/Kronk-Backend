@@ -1,5 +1,11 @@
 from contextlib import asynccontextmanager
 
+from bcrypt import gensalt, hashpw
+from faker import Faker
+from fastapi import FastAPI
+from firebase_admin import initialize_app
+from tortoise.contrib.fastapi import register_tortoise
+
 from app.admin_app.routes import admin_router
 from app.community_app.routes import community_router
 from app.education_app.routes import education_router
@@ -7,11 +13,6 @@ from app.my_taskiq.my_taskiq import broker
 from app.settings.my_config import get_settings
 from app.users_app.models import UserModel
 from app.users_app.routes import users_router
-from bcrypt import gensalt, hashpw
-from faker import Faker
-from fastapi import FastAPI
-from firebase_admin import initialize_app
-from tortoise.contrib.fastapi import register_tortoise
 
 settings = get_settings()
 
@@ -56,12 +57,9 @@ async def root() -> dict:
     if "some" == "not some":
         await UserModel.bulk_create(
             [
-                UserModel(username="alisher", email="alisheratajanov@gmail.com",
-                          password=hashpw(password="alisher2009".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/alisher.jpg"),
-                UserModel(username="kumush", email="kumushatajanova@gmail.com",
-                          password=hashpw(password="kumush2010".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/kumush.jpg"),
-                UserModel(username="ravshan", email="yangiboyevravshan@gmail.com",
-                          password=hashpw(password="ravshan2004".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/ravshan.jpeg"),
+                UserModel(username="alisher", email="alisheratajanov@gmail.com", password=hashpw(password="alisher2009".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/alisher.jpg"),
+                UserModel(username="kumush", email="kumushatajanova@gmail.com", password=hashpw(password="kumush2010".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/kumush.jpg"),
+                UserModel(username="ravshan", email="yangiboyevravshan@gmail.com", password=hashpw(password="ravshan2004".encode(), salt=gensalt(rounds=8)).decode(), avatar="users/images/ravshan.jpeg"),
             ]
         )
     return {"status": "ok"}

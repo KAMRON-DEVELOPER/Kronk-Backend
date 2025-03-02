@@ -1,4 +1,6 @@
 import re
+import uuid
+from datetime import datetime
 
 import cv2
 from fastapi import UploadFile
@@ -54,6 +56,24 @@ async def get_video_duration(file_path: str) -> float:
             raise ValueError(f"Invalid video properties: fps={fps}, frame_count={total_frame_count}")
 
         duration = total_frame_count / fps
+        video.release()
         return duration
     except Exception as e:
         raise ValueError(f"Could not get video duration: {e}")
+
+
+def convert_for_redis(data: dict) -> dict:
+    """Convert UUID to hex and datetime to ISO format for Redis compatibility."""
+
+    def convert_value(value):
+        if isinstance(value, uuid.UUID):
+            return value.hex
+        elif isinstance(value, datetime):
+            return value.timestamp()
+        elif isinstance(value, dict):
+            return convert_for_redis(value)
+        elif isinstance(value, (list, tuple)):
+            return [convert_value(v) for v in value]
+        return value
+
+    return {key: convert_value(value) for key, value in data.items()}
