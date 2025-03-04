@@ -1,21 +1,20 @@
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Callable, Optional
 from uuid import UUID
 
 import aiofiles
-from fastapi import File, Form, UploadFile
-from pydantic import BaseModel, Field
-from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
-
 from app.settings.my_config import get_settings
 from app.settings.my_minio import put_object_to_minio
 from app.utility.decorator import as_form
 from app.utility.my_logger import my_logger
 from app.utility.validators import allowed_image_extension, allowed_video_extension, get_file_extension, get_video_duration
+from fastapi import File, Form, UploadFile
+from pydantic import BaseModel, Field
+from pydantic_async_validation import AsyncValidationModelMixin, async_field_validator
 
 
 class FollowScheme(AsyncValidationModelMixin, BaseModel):
@@ -60,7 +59,7 @@ class PostCreateInit(BaseModel):
 
 
 @as_form
-class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
+class PostCreateSchema(AsyncValidationModelMixin, BaseModel):
     author_id: Optional[str] = None
     body: Optional[str] = None
     images: Optional[list[str]] = None
@@ -70,7 +69,7 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
     video_file: Optional[UploadFile] = None
 
     @classmethod
-    def as_form(cls) -> Callable[..., "PostCreateScheme"]:
+    def as_form(cls) -> Callable[..., "PostCreateSchema"]:
         pass  # This is just to help IDEs recognize `as_form` and making IDEs happy.
 
     class Config:
@@ -89,89 +88,119 @@ class PostCreateScheme(AsyncValidationModelMixin, BaseModel):
         try:
             if value is not None:
                 my_logger.debug(f"scheduled_time async_field_validator: {value}, type: {type(value)}")
-        except Exception as e:
-            raise ValueError(f"schedule time is invalid. {e}")
+                now = datetime.now(UTC)
+                max_future = now + timedelta(days=7)
+
+                if value < now:
+                    raise ValueError("Scheduled time cannot be in the past.")
+
+                if value > max_future:
+                    raise ValueError("Scheduled time cannot be more than 7 days in the future.")
+        except Exception as exception:
+            my_logger.error(f"Error while validating post schedule time. detail: {exception}")
+            raise ValueError(f"{exception}")
 
     @async_field_validator("image_files")
     async def validate_image(self, value: Optional[list[UploadFile]]) -> None:
-        my_logger.debug(f"async_field_validator image_files: {self.image_files}")
-        if value is not None:
-            my_logger.debug(f"image_files async_field_validator: {value}, type: {type(value)}")
-            if len(value) > 4:
-                raise ValueError("each post allowed images limit is 4")
+        try:
+            if value is not None:
+                my_logger.debug(f"async_field_validator image_files: {value}, type: {type(value)}")
+                if len(value) > 4:
+                    raise ValueError("each post allowed images limit is 4")
 
-            # Initialize self.images as an empty list if it is None
-            if self.images is None:
-                self.images = []
+                # Initialize self.images as an empty list if it is None
+                if self.images is None:
+                    self.images = []
 
-            for _value in value:
-                if get_file_extension(file=_value) not in allowed_image_extension:
-                    raise ValueError("not supported image format provided.")
-                _value_bytes = await _value.read()
-                object_name = await put_object_to_minio(
-                    object_name=f"users/{self.author_id}/post_images/{_value.filename}",
-                    data_stream=BytesIO(_value_bytes),
-                    length=len(_value_bytes),
-                )
-                my_logger.debug(f"object_name in validate_image: {object_name}")
-                my_logger.debug(f"self.images in validate_image: {self.images}, type: {type(self.images)}")
-                my_logger.debug(f"self.author_id in validate_image: {self.author_id}")
-                self.images.append(object_name)
+                for _value in value:
+                    if get_file_extension(file=_value) not in allowed_image_extension:
+                        raise ValueError("not supported image format provided.")
+                    _value_bytes = await _value.read()
+                    object_name = await put_object_to_minio(
+                        object_name=f"users/{self.author_id}/post_images/{_value.filename}",
+                        data_stream=BytesIO(_value_bytes),
+                        length=len(_value_bytes),
+                    )
+                    self.images.append(object_name)
+        except Exception as exception:
+            my_logger.error(f"Error while validating post images. detail: {exception}")
+            raise ValueError(f"{exception}")
 
     @async_field_validator("video_file")
     async def validate_video(self, value: Optional[UploadFile]) -> None:
-        my_logger.debug(f"async_field_validator video_file: {self.video_file}")
         if value is not None:
+            # Define the temporary file path
+            temp_videos_folder_path: Path = get_settings().TEMP_VIDEOS_FOLDER_PATH
+            temp_video: Path = temp_videos_folder_path / value.filename
             try:
-                # Check if the file extension is allowed
-                if get_file_extension(file=value) not in allowed_video_extension:
-                    raise ValueError("not supported video format provided.")
-
-                # Define the temporary file path
-                temp_videos_folder_path: Path = get_settings().TEMP_VIDEOS_FOLDER_PATH
-                temp_video: Path = temp_videos_folder_path / value.filename
-
-                my_logger.debug(f"temp_videos_folder_path: {temp_videos_folder_path.__str__()}")
-                my_logger.debug(f"temp_video: {temp_video.__str__()}")
-
-                # Ensure the temporary directory exists
-                temp_videos_folder_path.mkdir(parents=True, exist_ok=True)
-
-                # Write the uploaded file to the temporary location
-                async with aiofiles.open(file=temp_video, mode="wb") as temp_write_file:
-                    contents = await value.read()
-                    await temp_write_file.write(contents)
-                    await temp_write_file.flush()
-
-                    # Validate video duration
-                    duration = await get_video_duration(file_path=str(temp_video))
-                    my_logger.debug(f"duration: {duration}")
-                    if duration > 220:
-                        raise ValueError("video exceeds the max allowed duration 220 seconds.")
-
-                # Read the temporary file and upload it to MinIO
-                async with aiofiles.open(file=temp_video, mode="rb") as temp_read_file:
-                    video_bytes = await temp_read_file.read()
-                    object_name = await put_object_to_minio(
-                        object_name=f"users/{self.author_id}/post_videos/{value.filename}",
-                        data_stream=BytesIO(video_bytes),
-                        length=len(video_bytes),
-                    )
-                    self.video = object_name
-            except Exception as e:
-                my_logger.critical(f"Error processing video {value.filename}: {e}")
-                raise ValueError("Failed to process video file.")
-
-            finally:
+                my_logger.debug(f"async_field_validator video_file: {value}, type: {type(value)}")
                 try:
-                    if temp_video.exists():  # noqa
-                        temp_video.unlink()
+                    if get_file_extension(file=value) not in allowed_video_extension:
+                        raise ValueError("not supported video format provided.")
+
+                    my_logger.debug(f"temp_videos_folder_path: {temp_videos_folder_path.__str__()}")
+                    my_logger.debug(f"temp_video: {temp_video.__str__()}")
+
+                    # Ensure the temporary directory exists
+                    temp_videos_folder_path.mkdir(parents=True, exist_ok=True)
+
+                    # Write the uploaded file to the temporary location
+                    async with aiofiles.open(file=temp_video, mode="wb") as temp_write_file:
+                        contents = await value.read()
+                        await temp_write_file.write(contents)
+                        await temp_write_file.flush()
+
+                        # Validate video duration
+                        duration = await get_video_duration(file_path=str(temp_video))
+                        my_logger.debug(f"duration: {duration}")
+                        if duration > 220:
+                            raise ValueError("video exceeds the max allowed duration 220 seconds.")
+
+                    # Read the temporary file and upload it to MinIO
+                    async with aiofiles.open(file=temp_video, mode="rb") as temp_read_file:
+                        video_bytes = await temp_read_file.read()
+                        object_name = await put_object_to_minio(
+                            object_name=f"users/{self.author_id}/post_videos/{value.filename}",
+                            data_stream=BytesIO(video_bytes),
+                            length=len(video_bytes),
+                        )
+                        self.video = object_name
                 except Exception as e:
-                    my_logger.critical(f"Failed to delete video from server. detail: {e}")
-                    raise ValueError(f"Failed to delete video from server. detail: {e}")
+                    my_logger.error(f"Error processing video {value.filename}: {e}")
+                    raise ValueError("Failed to process video file.")
+
+                finally:
+                    try:
+                        if temp_video.exists():
+                            temp_video.unlink()
+                    except Exception as e:
+                        my_logger.error(f"Failed to delete video from server. detail: {e}")
+                        raise ValueError(f"Failed to delete video from server. detail: {e}")
+            except Exception as exception:
+                my_logger.error(f"Error while validating post video. detail: {exception}")
+                raise ValueError(f"{exception}")
 
     def __str__(self) -> str:
         return "<🚧 CreatePostScheme>"
+
+
+class PostDeleteSchema(AsyncValidationModelMixin, BaseModel):
+    id: Optional[UUID] = None
+    post_id: Optional[str] = None
+
+    @async_field_validator("post_id")
+    async def validate_body(self, value: Optional[str]) -> None:
+        if value is None:
+            raise ValueError("post id is required.")
+
+        try:
+            self.id = UUID(hex=value)
+        except Exception as exception:
+            my_logger.error(f"Error while validating post id. detail: {exception}")
+            raise ValueError(f"{exception}")
+
+    def __repr__(self) -> str:
+        return "<🚧 PostDeleteSchema>"
 
 
 class PostUpdateSchema(AsyncValidationModelMixin, BaseModel):

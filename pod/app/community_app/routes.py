@@ -1,24 +1,21 @@
 import asyncio
+from datetime import UTC, datetime, timedelta
 from typing import Optional
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
-from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 from app.community_app.models import FollowModel, PostModel, ReactionEnum
-from app.community_app.schemas import FollowScheme, PostCreateScheme, PostUpdateSchema
-from app.my_taskiq.my_taskiq import send_new_post_notification_task
+from app.community_app.schemas import FollowScheme, PostCreateSchema, PostDeleteSchema, PostUpdateSchema
+from app.my_taskiq.my_taskiq import redis_schedule_source, send_new_post_notification_task
 from app.settings.my_dependency import jwtDependency, websocketDependency
-from app.settings.my_redis import CacheManager, my_redis
+from app.settings.my_redis import cache_manager
 from app.settings.my_websocket import feed_connection_manager
 from app.utility.my_logger import my_logger
 from app.utility.validators import convert_for_redis
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from tortoise.contrib.pydantic import PydanticModel, pydantic_model_creator
 
 community_router = APIRouter()
 
 PostPydantic = pydantic_model_creator(cls=PostModel)
-
-cache_manager = CacheManager(redis=my_redis)
 
 
 @community_router.post(path="/follow", status_code=status.HTTP_200_OK)
@@ -27,10 +24,12 @@ async def follow_route(follow_schema: FollowScheme, jwt_dependency: jwtDependenc
         await FollowModel.create(following_id=jwt_dependency.user_id, follower_id=follow_schema.follower_id)
         await cache_manager.add_follower(user_id=jwt_dependency.user_id.hex, follower_id=follow_schema.follower_id.hex)
         return {"status": "ok"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"ValueError: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Exception: {e}")
+    except ValueError as value_error:
+        my_logger.error(f"ValueError in follow_route: {value_error}")
+        raise HTTPException(status_code=400, detail=f"{value_error}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in follow_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
 
 
 @community_router.post(path="/unfollow", status_code=status.HTTP_200_OK)
@@ -39,47 +38,41 @@ async def unfollow_route(follow_schema: FollowScheme, jwt_dependency: jwtDepende
         instance = await FollowModel.get_or_none(following_id=jwt_dependency.user_id, follower_id=follow_schema.follower_id)
         if instance is not None:
             await instance.delete()
-
-        await cache_manager.remove_follower(user_id=jwt_dependency.user_id.hex, follower_id=follow_schema.follower_id.hex)
-
         return {"status": "ok"}
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"ValueError: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Exception: {e}")
+    except ValueError as value_error:
+        my_logger.error(f"ValueError in unfollow_route: {value_error}")
+        raise HTTPException(status_code=400, detail=f"{value_error}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in unfollow_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
 
 
 @community_router.get(path="/followers", status_code=status.HTTP_200_OK)
-async def get_followers(jwt_dependency: jwtDependency):
+async def get_followers_route(jwt_dependency: jwtDependency):
     try:
         return await cache_manager.get_followers(user_id=jwt_dependency.user_id.hex)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"ValueError: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Exception: {e}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in get_follow_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
 
 
 @community_router.get(path="/followings", status_code=status.HTTP_200_OK)
-async def get_followings(jwt_dependency: jwtDependency):
+async def get_followings_route(jwt_dependency: jwtDependency):
     try:
         return await cache_manager.get_following(user_id=jwt_dependency.user_id.hex)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"ValueError: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=404, detail=f"Exception: {e}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in get_followings_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
 
 
 @community_router.post(path="/posts", status_code=status.HTTP_201_CREATED)
-async def post_create_route(jwt_dependency: jwtDependency, post_create_schema: PostCreateScheme = Depends(PostCreateScheme.as_form)):
+async def create_post_route(jwt_dependency: jwtDependency, post_create_schema: PostCreateSchema = Depends(PostCreateSchema.as_form)):
     try:
-        user_id: UUID = jwt_dependency.user_id
-        post_create_schema.author_id = user_id.hex
+        post_create_schema.author_id = jwt_dependency.user_id.hex
         await post_create_schema.model_async_validate()
 
-        my_logger.debug(f"post_create_schema.video: {post_create_schema.video}; type: {type(post_create_schema.video)}")
-        my_logger.debug(f"post_create_schema.images: {post_create_schema.images}; type: {type(post_create_schema.images)}")
         new_post = await PostModel.create(
-            author_id=user_id,
+            author_id=jwt_dependency.user_id,
             body=post_create_schema.body,
             scheduled_time=post_create_schema.scheduled_time,
             images=post_create_schema.images,
@@ -88,17 +81,42 @@ async def post_create_route(jwt_dependency: jwtDependency, post_create_schema: P
 
         post_dict = await generate_post_response_from_db_model(db_post=new_post)
         data_dict = convert_for_redis(data=post_dict)
-        await cache_manager.create_post(user_id=user_id.hex, post_id=new_post.id.hex, data_dict=data_dict)
 
-        # Send notification to followers
-        await send_new_post_notification_task.kiq(user_id=user_id, for_new_post=True)
+        # Cache the post to redis
+        await cache_manager.create_post(user_id=jwt_dependency.user_id.hex, post_id=new_post.id.hex, mapping=data_dict)
+
+        # Send websocket notification to followers
+        await send_new_post_notification_task.schedule_by_time(
+            source=redis_schedule_source,
+            time=datetime.now(UTC) + timedelta(seconds=5),
+            user_id=jwt_dependency.user_id,
+        )
 
         return data_dict
     except ValueError as value_error:
-        my_logger.error(f"ValueError in post_create_route: {value_error}")
+        my_logger.error(f"ValueError in create_post_route: {value_error}")
+        raise HTTPException(status_code=400, detail=f"{value_error}")
     except Exception as exception:
-        my_logger.critical(f"Exception in post_create_route: {exception}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Exception in create_post_route: {exception}")
+        my_logger.critical(f"Exception in create_post_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
+
+
+@community_router.delete(path="/posts", status_code=status.HTTP_201_CREATED)
+async def delete_post_route(jwt_dependency: jwtDependency, post_delete_schema: PostDeleteSchema):
+    try:
+        await post_delete_schema.model_async_validate()
+
+        instance = await PostModel.get_or_none(id=post_delete_schema.id, author_id=jwt_dependency.user_id)
+        if instance is not None:
+            await instance.delete()
+            await cache_manager.delete_post(user_id=jwt_dependency.user_id.hex, post_id=post_delete_schema.post_id)
+        return {"status": "ok"}
+    except ValueError as value_error:
+        my_logger.error(f"ValueError in delete_post_route: {value_error}")
+        raise HTTPException(status_code=400, detail=f"{value_error}")
+    except Exception as exception:
+        my_logger.critical(f"Exception in delete_post_route: {exception}")
+        raise HTTPException(status_code=500, detail="🤯 WTF? Something just exploded on our end. Try again later!")
 
 
 @community_router.get(path="/posts/home_timeline", status_code=status.HTTP_200_OK)
@@ -175,27 +193,7 @@ async def update_post_route(post_id: str, post_update_data: PostUpdateSchema, jw
         updated_post: PostModel = await post.update_from_dict(data=post_update_data.model_dump())
 
         data_dict: dict = await generate_post_response_from_db_model(db_post=updated_post)  # TODO needed fixes
-        await cache_manager.create_post(user_id=jwt_dependency.user_id.hex, post_id=updated_post.id.hex, data_dict=data_dict)
-    except ValueError as e:
-        print(f"ValueError in create_post_route: {e}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")
-    except Exception as e:
-        print(f"Exception in create_post_route: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Server error occurred while creating post.")
-
-
-@community_router.delete(path="/posts/{post_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_post_route(post_id: str, jwt_dependency: jwtDependency):
-    try:
-        post: Optional[PostModel] = await PostModel.get_or_none(id=post_id, author=jwt_dependency.user_id.hex)
-
-        if post is None:
-            raise ValueError("post not found")
-
-        await post.delete()
-
-        await cache_manager.delete_post(post_id=post_id, user_id=jwt_dependency.user_id.hex)
-        return {"status": "post deleted successfully"}
+        await cache_manager.create_post(user_id=jwt_dependency.user_id.hex, post_id=updated_post.id.hex, mapping=data_dict)
     except ValueError as e:
         print(f"ValueError in create_post_route: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{e}")

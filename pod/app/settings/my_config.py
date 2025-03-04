@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DATABASE_URL: Optional[str] = None
     REDIS_URL: Optional[str] = None
     TASKIQ_WORKER_URL: Optional[str] = None
+    TASKIQ_REDIS_SCHEDULE_SOURCE_URL: Optional[str] = None
     TASKIQ_SCHEDULER_URL: Optional[str] = None
 
     # MINIO

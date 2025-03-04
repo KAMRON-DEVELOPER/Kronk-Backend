@@ -1,9 +1,8 @@
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import Depends, Header, HTTPException, WebSocket, WebSocketException, status
-
 from app.utility.jwt_utils import JWTCredential, verify_jwt_token
+from fastapi import Depends, Header, HTTPException, WebSocket, WebSocketException, status
 
 
 class HeaderTokensCredential:

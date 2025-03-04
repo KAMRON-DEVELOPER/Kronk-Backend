@@ -1,18 +1,18 @@
 import asyncio
 from typing import Optional
 
-from taskiq import TaskiqScheduler
-from taskiq.schedule_sources import LabelScheduleSource
-from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
-from tortoise.expressions import F
-
 from app.admin_app.routes import metrics_connection_manager
-from app.community_app.models import PostModel
-from app.community_app.routes import feed_connection_manager
+from app.community_app.models import PostModel, FollowModel, PostCommentModel, PostReactionModel, PostViewModel, PostCommentReactionModel, PostCommentViewModel
+from app.users_app.models import UserModel
 from app.services.zepto_service import ZeptoMail
 from app.settings.my_config import get_settings
 from app.settings.my_redis import CacheManager, my_redis
+from app.settings.my_websocket import feed_connection_manager
 from app.utility.my_logger import my_logger
+from taskiq import TaskiqScheduler
+from taskiq.schedule_sources import LabelScheduleSource
+from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend, RedisScheduleSource
+from tortoise.expressions import F
 
 cache_manager = CacheManager(redis=my_redis)
 
@@ -22,7 +22,12 @@ broker = ListQueueBroker(
     url=settings.TASKIQ_WORKER_URL,
 ).with_result_backend(result_backend=RedisAsyncResultBackend(redis_url=settings.TASKIQ_SCHEDULER_URL, result_ex_time=600))
 
-scheduler = TaskiqScheduler(broker=broker, sources=[LabelScheduleSource(broker=broker)])
+redis_schedule_source = RedisScheduleSource(url=settings.TASKIQ_REDIS_SCHEDULE_SOURCE_URL)
+
+scheduler = TaskiqScheduler(
+    broker=broker,
+    sources=[LabelScheduleSource(broker=broker), redis_schedule_source],
+)
 
 
 @broker.task(task_name="send_email_task")
@@ -85,17 +90,101 @@ async def sync_post_statistics_to_db_task() -> None:
         print(f"Error updating view count: {e}")
 
 
-@broker.task()
+@broker.task(task_name="send_new_post_notification_task")
 async def send_new_post_notification_task(user_id: str) -> None:
-    user_avatar_url: Optional[str] = await cache_manager.get_user_avatar_url(user_id=user_id)
+    user_avatar_url: Optional[str] = await cache_manager.get_profile_avatar_url(user_id=user_id)
+    my_logger.debug(f"send_new_post_notification_task: {user_avatar_url}")
+    if user_avatar_url is None:
+        user_avatar_url = "defaults/default-avatar.jpg"
+    followers: set[str] = await cache_manager.get_followers(user_id=user_id)
+    await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
+
+
+@broker.task(task_name="send_new_follower_notification_task")
+async def send_new_follower_notification_task(user_id: str) -> None:
+    user_avatar_url: Optional[str] = await cache_manager.get_profile_avatar_url(user_id=user_id)
     if user_avatar_url is not None:
         followers: set[str] = await cache_manager.get_followers(user_id=user_id)
         await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
 
 
 @broker.task()
-async def send_new_follower_notification_task(user_id: str) -> None:
-    user_avatar_url: Optional[str] = await cache_manager.get_user_avatar_url(user_id=user_id)
-    if user_avatar_url is not None:
-        followers: set[str] = await cache_manager.get_followers(user_id=user_id)
-        await feed_connection_manager.broadcast(user_ids=list(followers), data={"user_avatar_url": user_avatar_url})
+async def distribute_restore_tasks(target: str):
+    batch_size = 1000
+    limit = 1000
+
+    models = [
+        (UserModel, "user:*"),
+        (PostModel, "post:*"),
+        (PostCommentModel, "post_comment:*"),
+        (PostReactionModel, "post_reaction:*"),
+        (PostViewModel, "post_view:*"),
+        (PostCommentReactionModel, "post_comment_reaction:*"),
+        (PostCommentViewModel, "post_comment_view:*"),
+    ]
+
+    for model, pattern in models:
+        if target == "redis":
+            await distribute_tasks_for_model(model, target, batch_size)
+        elif target == "db":
+            await distribute_tasks_for_model(model, target, batch_size)
+
+
+async def distribute_tasks_for_model(model, target: str, batch_size: int):
+    total_count = await model.all().count()
+    rounds = total_count // batch_size
+    remaining = total_count % batch_size
+
+    for i in range(0, rounds):
+        if target == "redis":
+            await sync_batch_from_db_to_redis.kiq(offset=i * batch_size, limit=batch_size)
+        elif target == "db":
+            await sync_batch_from_redis_to_db.kiq(offset=i * batch_size, limit=batch_size)
+
+    if remaining > 0:
+        if target == "redis":
+            await sync_batch_from_db_to_redis.kiq(offset=rounds * batch_size, limit=remaining)
+        elif target == "db":
+            await sync_batch_from_redis_to_db.kiq(offset=rounds * batch_size, limit=remaining)
+
+
+@broker.task()
+async def sync_batch_from_db_to_redis(offset: int = 0, limit: int = 100):
+    # Fetch users in the chunk
+    users = await UserModel.filter().offset(offset).limit(limit).all()
+    if users:
+        await cache_manager.create_users(
+            mappings=[
+                {
+                    "id": user.id,
+                    "created_at": user.created_at,
+                    "updated_at": user.updated_at,
+                    "username": user.username,
+                    "email": user.email,
+                    "password": user.password,
+                    "bio": user.bio
+                } for user in users
+            ],
+        )
+
+    # Fetch posts in the chunk
+    posts = await PostModel.filter().offset(offset).limit(limit).all()
+    if posts:
+        await cache_manager.create_posts(
+            mappings=[
+                {
+                    "id": post.id,
+                    "created_at": post.created_at,
+                    "updated_at": post.updated_at,
+                    "author": post.author,
+                    "body": post.body,
+                    "post_views": post.post_views,
+                    "post_reactions": post.post_reactions
+                } for post in posts
+            ],
+        )
+
+
+@broker.task()
+async def sync_batch_from_redis_to_db(offset: int = 0, limit: int = 100, batch_size: int = 100):
+    pass

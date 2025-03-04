@@ -1,10 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from authlib.jose import JWTClaims, jwt
-
 from app.settings.my_config import get_settings
 from app.utility.my_logger import my_logger
+from authlib.jose import JWTClaims, jwt
 
 settings = get_settings()
 

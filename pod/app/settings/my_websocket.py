@@ -1,9 +1,8 @@
 import asyncio
 from typing import Optional
 
-from fastapi import WebSocket
-
 from app.utility.my_logger import my_logger
+from fastapi import WebSocket
 
 
 class ConnectionManager:

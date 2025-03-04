@@ -6,11 +6,10 @@ from typing import Optional
 from uuid import UUID
 
 import aiohttp
-from modern_colorthief import get_color
-from PIL import Image
-
 from app.settings.my_minio import put_object_to_minio
 from app.utility.my_logger import my_logger
+from modern_colorthief import get_color
+from PIL import Image
 
 
 async def get_dominant_color(image_url: str) -> Optional[str]:

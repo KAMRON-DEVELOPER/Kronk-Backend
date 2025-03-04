@@ -1,16 +1,11 @@
-from enum import Enum
 from typing import Iterable, Optional
 
-from tortoise import BaseDBAsyncClient, fields
-
 from app.settings.my_minio import remove_objects_from_minio
+from app.settings.my_redis import cache_manager
 from app.users_app.models import BaseModel, UserModel
+from app.utility.my_enums import ReactionEnum
 from app.utility.my_logger import my_logger
-
-
-class ReactionEnum(str, Enum):
-    LIKE = "like"
-    DISLIKE = "dislike"
+from tortoise import BaseDBAsyncClient, fields
 
 
 class FollowModel(BaseModel):
@@ -21,10 +16,23 @@ class FollowModel(BaseModel):
         table = "follow"
         unique_together = ("follower", "following")
 
-    # def save(self, *args, **kwargs):
-    #     if self.follower.username == self.following.username:
-    #         raise ValueError("A user cannot follow themselves.")
-    #     return super().save(*args, **kwargs)
+    async def save(
+        self,
+        using_db: Optional[BaseDBAsyncClient] = None,
+        update_fields: Optional[Iterable[str]] = None,
+        force_create: bool = False,
+        force_update: bool = False,
+    ) -> None:
+        if self.follower.username == self.following.username:
+            raise ValueError("Users cannot follow themselves.")
+        await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
+
+    async def delete(self, using_db: Optional[BaseDBAsyncClient] = None) -> None:
+        try:
+            await cache_manager.remove_follower(user_id=self.following, follower_id=self.follower)
+        except Exception as exception:
+            my_logger.error(f"🚧 Could not remove follow relationship in cache. detail: {exception}")
+            raise ValueError(f"🚧 Could not remove follow relationship in cache. detail: {exception}")
 
     def __str__(self):
         return "🚧 FollowModel"
@@ -55,34 +63,31 @@ class PostModel(BaseModel):
     class PydanticMeta:
         allow_cycles = True
 
-    async def save(
-        self,
-        using_db: Optional[BaseDBAsyncClient] = None,
-        update_fields: Optional[Iterable[str]] = None,
-        force_create: bool = False,
-        force_update: bool = False,
-    ) -> None:
-        my_logger.debug(f"PostModel save method is working...")
-        await super().save(using_db=using_db, update_fields=update_fields, force_create=force_create, force_update=force_update)
-
     async def delete(self, using_db: Optional[BaseDBAsyncClient] = None) -> None:
-        my_logger.debug(f"PostModel delete method is working...")
-        my_logger.debug(f"PostModel delete; self.video: {self.video}")
-        my_logger.debug(f"PostModel delete; self.images: {self.images}")
+        try:
+            # delete media of the post
+            if self.video:
+                my_logger.debug(f"PostModel deleting video: {self.video}")
+                await remove_objects_from_minio(object_names=[self.video])
+            if self.images:
+                my_logger.debug(f"PostModel deleting images: {self.images}")
+                await remove_objects_from_minio(object_names=self.images)
 
-        if self.video:
-            my_logger.debug(f"PostModel delete method; self.video: {self.video}")
-            await remove_objects_from_minio(
-                object_names=[
-                    self.video,
-                ]
-            )
-        if self.images:
-            my_logger.debug(f"PostModel delete method; self.images: {self.images}")
-            await remove_objects_from_minio(object_names=self.images)
-        await super().delete(using_db=using_db)
+            # comments = self.post_comments.all()
+            # if comments:
+            #     await comments.delete()
 
-        my_logger.debug(f"PostModel was deleted successfully.")
+            # reactions = self.post_reactions.all()
+            # if reactions:
+            #     await reactions.delete()
+
+            # views = self.post_views.all()
+            # if views:
+            #     await views.delete()
+            await super().delete(using_db=using_db)
+        except Exception as exception:
+            my_logger.error(f"🚧 Could not delete post media. detail: {exception}")
+            raise ValueError(f"🚧 Could not delete post media. detail: {exception}")
 
     def __str__(self):
         return "🚧 PostModel"

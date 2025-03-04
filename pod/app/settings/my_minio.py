@@ -2,14 +2,13 @@ from io import BytesIO
 from typing import Optional
 
 import aiohttp
+from app.settings.my_config import get_settings
+from app.utility.my_logger import my_logger
 from miniopy_async import Minio
 from miniopy_async.datatypes import ListObjects
 
 # from miniopy_async.datatypes import ListObjects, Object
 from miniopy_async.helpers import ObjectWriteResult
-
-from app.settings.my_config import get_settings
-from app.utility.my_logger import my_logger
 
 settings = get_settings()
 
